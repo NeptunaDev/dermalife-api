@@ -8,7 +8,11 @@ app.use(express.json());
 app.use('/webhook', webhookRoutes);
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
 });
 
 module.exports = app;
