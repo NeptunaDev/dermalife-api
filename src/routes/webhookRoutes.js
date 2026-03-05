@@ -5,10 +5,10 @@ const { verifyShopifyHmac } = require('../middlewares/shopifyHmac');
 const router = express.Router();
 
 router.post(
-  '/order-created',
+  '/order-completed',
   express.raw({ type: 'application/json' }),
   verifyShopifyHmac,
-  webhookController.handleOrderCreated
+  webhookController.handleOrderCompleted
 );
 
 module.exports = router;

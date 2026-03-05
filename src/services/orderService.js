@@ -1,5 +1,6 @@
 const config = require('../config');
 const { validatePayload } = require('../schemas/orderSchema');
+const logger = require('./logger');
 
 function buildPayload(order) {
   return {
@@ -47,6 +48,7 @@ function buildPayload(order) {
 async function forwardToExternalApi(payload) {
   const { url, token } = config.apiExterna;
 
+  logger.stepInfo(`Enviando a API externa: ${url}`);
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -58,21 +60,32 @@ async function forwardToExternalApi(payload) {
 
   if (!response.ok) {
     const text = await response.text();
+    logger.stepErr(`API externa respondió ${response.status}: ${text}`);
     throw new Error(`API externa error ${response.status}: ${text}`);
   }
 
+  logger.stepOk(`API externa respondió ${response.status} OK`);
   return response;
 }
 
 async function processOrder(rawBody) {
+  logger.stepInfo('Convirtiendo body raw a JSON...');
   const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
   const order = JSON.parse(bodyStr);
-  const payload = buildPayload(order);
+  logger.stepOk('Body parseado correctamente');
 
+  logger.stepInfo('Construyendo payload para API externa...');
+  const payload = buildPayload(order);
+  logger.payload('Payload transformado', payload);
+  logger.stepOk(`Payload listo: orden #${payload.orden_numero}, ${payload.productos?.length || 0} producto(s)`);
+
+  logger.stepInfo('Validando estructura con schema Joi...');
   const { error } = validatePayload(payload);
   if (error) {
+    logger.stepErr(`Validación fallida: ${error.message}`);
     throw new Error(`Validación fallida: ${error.message}`);
   }
+  logger.stepOk('Validación pasada');
 
   await forwardToExternalApi(payload);
   return payload;

@@ -32,7 +32,7 @@ npm run dev     # Desarrollo (con --watch)
 
 ## Endpoints
 
-- `POST /webhook/order-created` — Webhook Shopify cuando se crea una orden
+- `POST /webhook/order-completed` — Webhook Shopify cuando un cliente completa una compra
 - `GET /health` — Health check
 
 ## Estructura
