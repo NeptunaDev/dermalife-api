@@ -5,7 +5,10 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "NODE_ENV=development node --watch src/index.js"
+    "dev": "cross-env NODE_ENV=development node --watch src/index.js"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
