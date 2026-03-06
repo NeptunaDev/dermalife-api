@@ -23,6 +23,10 @@ function verifyShopifyHmac(req, res, next) {
 
   if (hash !== hmac) {
     logger.stepErr('Firma HMAC inválida - hash no coincide');
+    if (logger.isDev) {
+      logger.stepInfo('Verifica: SHOPIFY_WEBHOOK_SECRET en .env debe coincidir EXACTAMENTE con el "Signing secret" del webhook en Shopify');
+      logger.stepInfo('Shopify Admin → Configuración → Notificaciones → Webhooks → tu webhook → Signing secret');
+    }
     return res.status(401).send('Unauthorized');
   }
 

@@ -19,7 +19,7 @@ Configura las variables en `.env`:
 | Variable | Descripción |
 |----------|-------------|
 | `PORT` | Puerto del servidor (default: 3000) |
-| `SHOPIFY_WEBHOOK_SECRET` | Secret del webhook en Shopify |
+| `SHOPIFY_WEBHOOK_SECRET` | Signing secret del webhook (Shopify Admin → Notificaciones → Webhooks) |
 | `API_EXTERNA_URL` | URL destino para enviar órdenes |
 | `API_EXTERNA_TOKEN` | Token Bearer de autorización |
 
@@ -34,6 +34,10 @@ npm run dev     # Desarrollo (con --watch)
 
 - `POST /webhook/order-completed` — Webhook Shopify cuando un cliente completa una compra
 - `GET /health` — Health check
+
+## Troubleshooting
+
+**"Firma HMAC inválida" (401):** El `SHOPIFY_WEBHOOK_SECRET` en `.env` debe coincidir **exactamente** con el "Signing secret" del webhook en Shopify. Obtén el valor en: Configuración → Notificaciones → Webhooks → tu webhook → Signing secret.
 
 ## Estructura
 
