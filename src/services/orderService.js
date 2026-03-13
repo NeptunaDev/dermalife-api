@@ -1,6 +1,9 @@
 const config = require('../config');
 const { validatePayload } = require('../schemas/orderSchema');
 const logger = require('./logger');
+const { extraerClienteDeShopify } = require('../mappers/shopifyToHgi');
+const { garantizarTercero } = require('./hgiTerceroService');
+const { crearFacturaEnHGI } = require('./hgiDocumentService');
 
 function buildPayload(order) {
   return {
@@ -88,6 +91,18 @@ async function processOrder(rawBody) {
   logger.stepOk('Validación pasada');
 
   await forwardToExternalApi(payload);
+
+  // Facturación automática en HGI (no fallar el webhook si HGI falla)
+  if (config.hgi?.baseUrl) {
+    try {
+      const datosCliente = extraerClienteDeShopify(order);
+      await garantizarTercero(datosCliente);
+      await crearFacturaEnHGI(order, datosCliente.numeroIdentificacion);
+    } catch (hgiError) {
+      logger.stepErr(`HGI facturación: ${hgiError.message}`);
+    }
+  }
+
   return payload;
 }
 
