@@ -19,10 +19,11 @@ function mapearOrdenShopifyParaHGI(order) {
   const shipping = order.shipping_address || {};
   const billing = order.billing_address || {};
 
-  const numeroIdentificacion =
-    billing.company && String(billing.company).trim() !== ''
-      ? String(billing.company).trim()
-      : String(customer.id ?? '');
+  const numeroIdentificacion = (
+    order.shipping_address?.company ||   // campo "Número de Identificación" del checkout (entrega)
+    order.billing_address?.company ||   // fallback billing
+    String(customer.id ?? '')
+  ).trim();
 
   const terceroData = {
     numeroIdentificacion,
