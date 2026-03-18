@@ -1,51 +1,47 @@
-const axios = require("axios");
-const config = require("../config");
-const logger = require("./logger");
-const { getAuthHeaders, invalidateToken } = require("./hgiAuthService");
+const axios = require('axios');
+const config = require('../config');
+const logger = require('./logger');
 
-const base = (config.hgi.baseUrl || "").replace(/\/$/, "");
+const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
 
-async function garantizarTercero(datosCliente, retry = false) {
+async function crearOActualizarTercero(terceroData, token) {
   const payload = [
     {
-      NumeroIdentificacion: datosCliente.numeroIdentificacion,
-      Nombre: datosCliente.nombre,
-      Direccion: datosCliente.direccion || "",
-      CodigoCiudad: "",
-      Telefono: datosCliente.telefono || "",
-      Email: datosCliente.email || "",
-      CodigoTipoTercero: "",
-      CodigoVendedor: "84",
+      NumeroIdentificacion: terceroData.numeroIdentificacion,
+      Nombre: terceroData.nombre,
+      Direccion: terceroData.direccion ?? '',
+      CodigoCiudad: terceroData.codigoCiudad ?? '',
+      Telefono: terceroData.telefono ?? '',
+      Email: terceroData.email ?? '',
+      CodigoTipoTercero: '10',
+      CodigoVendedor: '51',
+      CodigoSucursal: '1',
+      CodigoCausaRetiro: '0',
     },
   ];
 
-  const headers = await getAuthHeaders();
   const url = `${base}/Api/Terceros/Crear`;
-  const { status } = await axios.post(url, payload, {
-    headers,
-    validateStatus: () => true,
+  const { data } = await axios.post(url, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
   });
 
-  if (status === 200) {
-    logger.stepOk(
-      `HGI: tercero garantizado ${datosCliente.numeroIdentificacion}`,
-    );
+  const first = Array.isArray(data) ? data[0] : data;
+  const err = first?.Error;
+  if (err == null) {
+    logger.stepOk(`HGI: tercero creado/actualizado ${terceroData.numeroIdentificacion}`);
     return;
   }
-
-  if (status === 401) {
-    if (retry) {
-      logger.stepErr("HGI Terceros: 401 tras reintento");
-      throw new Error("HGI: no autorizado");
-    }
-    invalidateToken();
-    logger.stepInfo("HGI Terceros: 401, invalidando token y reintentando...");
-    return garantizarTercero(datosCliente, true);
+  const mensaje = err.Mensaje ?? err.mensaje ?? String(err);
+  if (mensaje.toLowerCase().includes('ya se encuentra registrado')) {
+    logger.stepOk(`HGI: tercero ya registrado ${terceroData.numeroIdentificacion}`);
+    return;
   }
-
-  throw new Error(`HGI Terceros/Crear: ${status}`);
+  throw new Error(mensaje);
 }
 
 module.exports = {
-  garantizarTercero,
+  crearOActualizarTercero,
 };

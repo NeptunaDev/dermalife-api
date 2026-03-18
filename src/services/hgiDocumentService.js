@@ -1,125 +1,123 @@
 const axios = require('axios');
 const config = require('../config');
 const logger = require('./logger');
-const { getAuthHeaders, invalidateToken } = require('./hgiAuthService');
+const hgiCacheService = require('./hgiCacheService');
 
-const EMPRESA = 1;
-const COMPANIA = 1;
-const CODIGO_TRANSACCION = 'FAC';
-const CODIGO_VENDEDOR = '84';
-const CODIGO_BODEGA = '5';
+const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
 
-const base = (config.hgi.baseUrl || '').replace(/\/$/, '');
-
-async function crearCabecera(ordenShopify, numeroIdentificacionCliente) {
-  const headers = await getAuthHeaders();
-  const email = ordenShopify.contact_email || ordenShopify.customer?.email || '';
-  const body = [
+async function crearEncabezadoFAC(docData, token) {
+  const payload = [
     {
-      Empresa: EMPRESA,
-      Compania: COMPANIA,
-      CodigoTransaccion: CODIGO_TRANSACCION,
-      NumeroDocumento: `SHOP-${ordenShopify.id}`,
-      Fecha: ordenShopify.created_at,
-      NumeroIdentificacionTercero: numeroIdentificacionCliente,
-      CodigoVendedor: CODIGO_VENDEDOR,
-      CodigoBodega: CODIGO_BODEGA,
-      ValorTotal: ordenShopify.total_price,
-      Observaciones: `Orden Shopify #${ordenShopify.order_number} - ${email}`,
+      Empresa: 1,
+      Compania: 1,
+      Transaccion: '67',
+      NumeroDocumento: docData.numeroDocumento,
+      Fecha: docData.fecha,
+      Ano: docData.ano,
+      Periodo: docData.periodo,
+      Tercero: docData.numeroIdentificacion,
+      Vinculado: '0',
+      TerceroAuxiliar: '0',
+      TransaccionAuxiliar: '0',
+      Vendedor: '51',
+      Transportador: '0',
+      BodegaDestino: '0',
+      Bodega: '5',
+      Clase: '0',
+      Moneda: '0',
+      Sucursal: '0',
+      CentroCosto: '0',
+      SubcentroCosto: '0',
+      Local: '0',
+      TipoEvento: '0',
+      ProductoP: '0',
+      CantidadP: 0,
+      BaseP: 0,
+      Referencia: '0',
+      Referencia1: '0',
+      Referencia2: '0',
+      Referencia3: '0',
+      UsuarioGraba: 'admin',
+      ValorTotal: docData.total,
+      Observaciones: docData.observaciones,
     },
   ];
-  const { data, status } = await axios.post(`${base}/Api/Documentos/Crear`, body, {
-    headers,
-    validateStatus: () => true,
+
+  const url = `${base}/Api/Documentos/Crear`;
+  const { data } = await axios.post(url, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
   });
-  return { data, status };
+
+  const first = Array.isArray(data) ? data[0] : data;
+  const err = first?.Error;
+  if (err != null) {
+    const mensaje = err.Mensaje ?? err.mensaje ?? JSON.stringify(err);
+    throw new Error(mensaje);
+  }
+  const numero = first?.Numero ?? first?.numero;
+  if (numero == null) {
+    throw new Error('HGI: respuesta Crear encabezado sin Numero');
+  }
+  logger.stepOk(`HGI: encabezado FAC creado, Numero=${numero}`);
+  return numero;
 }
 
-async function crearDetalle(ordenShopify, codigoDocumento) {
-  const headers = await getAuthHeaders();
-  const items = (ordenShopify.line_items || []).filter((item) => {
-    if (!item.sku || String(item.sku).trim() === '') {
-      logger.stepInfo(`HGI: item sin SKU omitido (puede ser envío): ${item.name || item.title}`);
-      return false;
-    }
-    return true;
+async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha, token) {
+  const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
+
+  const payload = [
+    {
+      Empresa: 1,
+      Transaccion: '67',
+      Documento: numeroDoc,
+      Producto: item.sku,
+      Cantidad: item.cantidad,
+      Bodega: '5',
+      Tercero: numeroIdentificacion,
+      Vinculado: '0',
+      Sucursal: '0',
+      CentroCosto: '0',
+      SubcentroCosto: '0',
+      Vendedor: '51',
+      Unidad: unidad,
+      Talla: '0',
+      Color: '0',
+      Lote: '0',
+      Serie1: '0',
+      Serie2: '0',
+      Serie3: '0',
+      Descripcion1: '0',
+      CodigoUbicacion: '0',
+      CantidadDocumento: 0,
+      Fecha1: fecha,
+      Fecha2: fecha,
+      ProductoDescripcion: '0',
+      ActivoFijo: '0',
+    },
+  ];
+
+  const url = `${base}/Api/Documentos/CrearDetalle`;
+  const { data } = await axios.post(url, payload, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
   });
-  const body = items.map((item) => ({
-    Empresa: EMPRESA,
-    Compania: COMPANIA,
-    CodigoTransaccion: CODIGO_TRANSACCION,
-    CodigoDocumento: codigoDocumento,
-    CodigoProducto: item.sku,
-    Cantidad: item.quantity,
-    PrecioUnitario: item.price,
-    Descuento: 0,
-    CodigoBodega: CODIGO_BODEGA,
-  }));
-  if (body.length === 0) {
-    logger.stepInfo('HGI: no hay ítems con SKU para crear detalle');
-    return { data: null, status: 200 };
-  }
-  const { data, status } = await axios.post(`${base}/Api/Documentos/CrearDetalle`, body, {
-    headers,
-    validateStatus: () => true,
-  });
-  return { data, status };
-}
 
-function extraerCodigoDocumento(respuestaCrear) {
-  const d = respuestaCrear?.data;
-  if (d == null) return null;
-  if (typeof d === 'number') return d;
-  if (typeof d.CodigoDocumento !== 'undefined') return d.CodigoDocumento;
-  if (typeof d.NumeroDocumento !== 'undefined') return d.NumeroDocumento;
-  if (Array.isArray(d) && d.length > 0) {
-    const first = d[0];
-    return first?.CodigoDocumento ?? first?.NumeroDocumento ?? first;
+  const first = Array.isArray(data) ? data[0] : data;
+  const err = first?.Error;
+  if (err != null) {
+    const mensaje = err.Mensaje ?? err.mensaje ?? JSON.stringify(err);
+    logger.stepErr(`HGI CrearDetalle SKU ${item.sku}: ${mensaje}`);
+    return;
   }
-  return d.CodigoDocumento ?? d.NumeroDocumento ?? null;
-}
-
-async function crearFacturaEnHGI(ordenShopify, numeroIdentificacionCliente, retry = false) {
-  const { data: dataCab, status: statusCab } = await crearCabecera(
-    ordenShopify,
-    numeroIdentificacionCliente
-  );
-  if (statusCab === 401) {
-    if (retry) {
-      logger.stepErr('HGI Documentos: 401 tras reintento');
-      throw new Error('HGI: no autorizado');
-    }
-    invalidateToken();
-    logger.stepInfo('HGI Documentos: 401, invalidando token y reintentando...');
-    return crearFacturaEnHGI(ordenShopify, numeroIdentificacionCliente, true);
-  }
-  if (statusCab !== 200) {
-    const msg = dataCab?.message || dataCab?.Message || JSON.stringify(dataCab);
-    throw new Error(`HGI Crear cabecera: ${statusCab} - ${msg}`);
-  }
-  const codigoDocumento = extraerCodigoDocumento({ data: dataCab });
-  if (codigoDocumento == null) {
-    throw new Error('HGI: no se obtuvo CodigoDocumento de la respuesta');
-  }
-  logger.stepOk(`HGI: documento FAC creado: ${codigoDocumento}`);
-
-  const { status: statusDet } = await crearDetalle(ordenShopify, codigoDocumento);
-  if (statusDet === 401) {
-    if (retry) {
-      logger.stepErr('HGI Documentos detalle: 401 tras reintento');
-      throw new Error('HGI: no autorizado');
-    }
-    invalidateToken();
-    logger.stepInfo('HGI Documentos detalle: 401, invalidando token y reintentando...');
-    return crearFacturaEnHGI(ordenShopify, numeroIdentificacionCliente, true);
-  }
-  if (statusDet !== 200) {
-    logger.stepErr(`HGI CrearDetalle respondió ${statusDet}`);
-    throw new Error(`HGI CrearDetalle: ${statusDet}`);
-  }
-  logger.stepOk('HGI: factura (cabecera + detalle) creada correctamente');
+  logger.stepOk(`HGI: detalle creado para SKU ${item.sku}`);
 }
 
 module.exports = {
-  crearFacturaEnHGI,
+  crearEncabezadoFAC,
+  crearDetalleFAC,
 };

@@ -1,9 +1,11 @@
 const config = require('../config');
 const { validatePayload } = require('../schemas/orderSchema');
 const logger = require('./logger');
-const { extraerClienteDeShopify } = require('../mappers/shopifyToHgi');
-const { garantizarTercero } = require('./hgiTerceroService');
-const { crearFacturaEnHGI } = require('./hgiDocumentService');
+const { mapearOrdenShopifyParaHGI } = require('../mappers/shopifyToHgi');
+const { getToken } = require('./hgiAuthService');
+const hgiCacheService = require('./hgiCacheService');
+const { crearOActualizarTercero } = require('./hgiTerceroService');
+const { crearEncabezadoFAC, crearDetalleFAC } = require('./hgiDocumentService');
 
 function buildPayload(order) {
   return {
@@ -77,33 +79,42 @@ async function processOrder(rawBody) {
   const order = JSON.parse(bodyStr);
   logger.stepOk('Body parseado correctamente');
 
-  logger.stepInfo('Construyendo payload para API externa...');
-  const payload = buildPayload(order);
-  logger.payload('Payload transformado', payload);
-  logger.stepOk(`Payload listo: orden #${payload.orden_numero}, ${payload.productos?.length || 0} producto(s)`);
+  const { terceroData, docData, items } = mapearOrdenShopifyParaHGI(order);
+  logger.stepInfo(`Orden mapeada: tercero ${terceroData.numeroIdentificacion}, ${items.length} ítem(s)`);
 
-  logger.stepInfo('Validando estructura con schema Joi...');
-  const { error } = validatePayload(payload);
-  if (error) {
-    logger.stepErr(`Validación fallida: ${error.message}`);
-    throw new Error(`Validación fallida: ${error.message}`);
-  }
-  logger.stepOk('Validación pasada');
-
-  await forwardToExternalApi(payload);
-
-  // Facturación automática en HGI (no fallar el webhook si HGI falla)
-  if (config.hgi?.baseUrl) {
-    try {
-      const datosCliente = extraerClienteDeShopify(order);
-      await garantizarTercero(datosCliente);
-      await crearFacturaEnHGI(order, datosCliente.numeroIdentificacion);
-    } catch (hgiError) {
-      logger.stepErr(`HGI facturación: ${hgiError.message}`);
-    }
+  if (items.length === 0) {
+    logger.stepErr('No hay ítems con SKU para facturar en HGI');
+    throw new Error('No hay ítems con SKU para facturar en HGI');
   }
 
-  return payload;
+  logger.stepInfo('Obteniendo token HGI...');
+  const token = await getToken();
+
+  logger.stepInfo('Obteniendo código ciudad desde caché...');
+  const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(terceroData.ciudad);
+  terceroData.codigoCiudad = codigoCiudad;
+
+  logger.stepInfo('Creando o actualizando tercero en HGI...');
+  await crearOActualizarTercero(terceroData, token);
+
+  logger.stepInfo('Creando encabezado FAC en HGI...');
+  const numeroDoc = await crearEncabezadoFAC(docData, token);
+  if (numeroDoc == null) {
+    throw new Error('HGI: no se obtuvo número de documento del encabezado');
+  }
+
+  for (const item of items) {
+    logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
+    await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha, token);
+  }
+
+  logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
+  return {
+    orden_numero: order.order_number,
+    numeroDoc,
+    terceroData,
+    itemsCount: items.length,
+  };
 }
 
 module.exports = {
