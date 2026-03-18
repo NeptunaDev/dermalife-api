@@ -2,7 +2,6 @@ const config = require('../config');
 const { validatePayload } = require('../schemas/orderSchema');
 const logger = require('./logger');
 const { mapearOrdenShopifyParaHGI } = require('../mappers/shopifyToHgi');
-const { getToken } = require('./hgiAuthService');
 const hgiCacheService = require('./hgiCacheService');
 const { crearOActualizarTercero } = require('./hgiTerceroService');
 const { crearEncabezadoFAC, crearDetalleFAC } = require('./hgiDocumentService');
@@ -87,33 +86,33 @@ async function processOrder(rawBody) {
     throw new Error('No hay ítems con SKU para facturar en HGI');
   }
 
-  logger.stepInfo('Obteniendo token HGI...');
-  const token = await getToken();
-
   logger.stepInfo('Obteniendo código ciudad desde caché...');
   const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(terceroData.ciudad);
   terceroData.codigoCiudad = codigoCiudad;
 
   logger.stepInfo('Creando o actualizando tercero en HGI...');
-  await crearOActualizarTercero(terceroData, token);
+  await crearOActualizarTercero(terceroData);
 
   logger.stepInfo('Creando encabezado FAC en HGI...');
-  const numeroDoc = await crearEncabezadoFAC(docData, token);
-  if (numeroDoc == null) {
-    throw new Error('HGI: no se obtuvo número de documento del encabezado');
-  }
+  // const numeroDoc = await crearEncabezadoFAC(docData);
+  // if (numeroDoc == null) {
+  //   throw new Error('HGI: no se obtuvo número de documento del encabezado');
+  // }
 
-  for (const item of items) {
-    logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
-    await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha, token);
-  }
+  // for (const item of items) {
+  //   logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
+  //   await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha);
+  // }
 
-  logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
+  // logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
   return {
-    orden_numero: order.order_number,
-    numeroDoc,
-    terceroData,
-    itemsCount: items.length,
+    // orden_numero: order.order_number,
+    // numeroDoc,
+    // terceroData,
+    // itemsCount: items.length,
+    ...docData,
+    ...terceroData,
+    ...items,
   };
 }
 

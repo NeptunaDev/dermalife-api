@@ -1,11 +1,11 @@
-const axios = require('axios');
 const config = require('../config');
 const logger = require('./logger');
 const hgiCacheService = require('./hgiCacheService');
+const { hgiRequest } = require('./hgiAuthService');
 
 const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
 
-async function crearEncabezadoFAC(docData, token) {
+async function crearEncabezadoFAC(docData) {
   const payload = [
     {
       Empresa: 1,
@@ -44,11 +44,11 @@ async function crearEncabezadoFAC(docData, token) {
   ];
 
   const url = `${base}/Api/Documentos/Crear`;
-  const { data } = await axios.post(url, payload, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+  const { data } = await hgiRequest({
+    method: 'post',
+    url,
+    headers: { 'Content-Type': 'application/json' },
+    data: payload,
   });
 
   const first = Array.isArray(data) ? data[0] : data;
@@ -65,7 +65,12 @@ async function crearEncabezadoFAC(docData, token) {
   return numero;
 }
 
-async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha, token) {
+async function crearDetalleFAC(
+  numeroDoc,
+  item,
+  numeroIdentificacion,
+  fecha,
+) {
   const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
 
   const payload = [
@@ -100,11 +105,11 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha, tok
   ];
 
   const url = `${base}/Api/Documentos/CrearDetalle`;
-  const { data } = await axios.post(url, payload, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+  const { data } = await hgiRequest({
+    method: 'post',
+    url,
+    headers: { 'Content-Type': 'application/json' },
+    data: payload,
   });
 
   const first = Array.isArray(data) ? data[0] : data;

@@ -1,39 +1,64 @@
-const axios = require('axios');
 const config = require('../config');
+const fs = require('fs');
+const path = require('path');
 const logger = require('./logger');
-const { getToken } = require('./hgiAuthService');
+const { hgiRequest } = require('./hgiAuthService');
+const Fuse = require('fuse.js');
 
 const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
+const CIUDAD_JSON_PATH = path.resolve(__dirname, '../../data/ciudad/ciudad.json');
 
 const ciudadesMap = new Map();
 const productosMap = new Map();
+let fuseCiudades = null;
+const cacheCodigoCiudad = new Map(); // cache de O(1) por nombre normalizado
 
 function normalizarNombreCiudad(nombre) {
-  return nombre
-    .toUpperCase()
+  // Quitamos tildes (á->a, Á->A) y luego pasamos a mayusculas
+  return String(nombre)
+    .trim()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .trim();
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+function construirFuseCiudades() {
+  // índice para búsquedas aproximadas (typos)
+  const items = Array.from(ciudadesMap.keys());
+  fuseCiudades = new Fuse(items, { threshold: 0.4, ignoreLocation: true });
 }
 
 async function cargarCiudades() {
-  if (!base) return;
-  const token = await getToken();
-  const url = `${base}/Api/Ciudades/Obtener`;
-  logger.stepInfo('HGI Cache: cargando ciudades...');
-  const { data } = await axios.get(url, {
-    params: { codigo: '*' },
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  // Mostrar estructura real para ajustar el parseo (primeros 300 chars)
-  const preview = (() => {
-    try {
-      return JSON.stringify(data).substring(0, 300);
-    } catch {
-      return String(data).substring(0, 300);
+  // Preferimos ciudad.json (sin endpoint)
+  try {
+    const raw = fs.readFileSync(CIUDAD_JSON_PATH, 'utf8');
+    const data = JSON.parse(raw);
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      ciudadesMap.clear();
+      for (const [nombre, codigo] of Object.entries(data)) {
+        if (!nombre || codigo == null) continue;
+        const clave = normalizarNombreCiudad(nombre);
+        ciudadesMap.set(clave, String(codigo));
+      }
+      logger.stepOk(`HGI Cache: ${ciudadesMap.size} ciudades cargadas desde ciudad.json`);
+      construirFuseCiudades();
+      cacheCodigoCiudad.clear();
+      return;
     }
-  })();
-  logger.stepInfo('HGI Cache: estructura respuesta ciudades: ' + preview);
+  } catch (err) {
+    logger.stepErr(`HGI Cache: no se pudo leer ciudad.json; usando endpoint HGI. ${err.message}`);
+  }
+
+  // Fallback: endpoint HGI (si ciudad.json no existe o tiene estructura inválida)
+  if (!base) return;
+  const url = `${base}/Api/Ciudades/Obtener`;
+  logger.stepInfo('HGI Cache: cargando ciudades desde endpoint...');
+  const { data } = await hgiRequest({
+    method: 'get',
+    url,
+    params: { codigo: '*' },
+  });
 
   // Algunas versiones devuelven array directo y otras envuelven en propiedad
   let lista = [];
@@ -57,6 +82,7 @@ async function cargarCiudades() {
       if (Array.isArray(firstArray)) lista = firstArray;
     }
   }
+
   ciudadesMap.clear();
   for (const item of lista) {
     const nombre = item.Nombre ?? item.nombre ?? '';
@@ -66,15 +92,19 @@ async function cargarCiudades() {
       ciudadesMap.set(clave, String(codigo));
     }
   }
-  logger.stepOk(`HGI Cache: ${ciudadesMap.size} ciudades cargadas`);
+
+  logger.stepOk(`HGI Cache: ${ciudadesMap.size} ciudades cargadas desde endpoint`);
+  construirFuseCiudades();
+  cacheCodigoCiudad.clear();
 }
 
 async function cargarProductos() {
   if (!base) return;
-  const token = await getToken();
   const url = `${base}/Api/Productos/ObtenerProductos`;
   logger.stepInfo('HGI Cache: cargando productos...');
-  const { data } = await axios.get(url, {
+  const { data } = await hgiRequest({
+    method: 'get',
+    url,
     params: {
       codigo_producto: '*',
       movil: '*',
@@ -83,7 +113,6 @@ async function cargarProductos() {
       incluir_foto: false,
       estado: '*',
     },
-    headers: { Authorization: `Bearer ${token}` },
   });
   const lista = Array.isArray(data) ? data : [];
   productosMap.clear();
@@ -98,11 +127,15 @@ async function cargarProductos() {
 }
 
 async function inicializarCache() {
+  // Ciudades: preferimos cargar desde `ciudad.json`, no depende del endpoint HGI.
+  await cargarCiudades();
+
+  // Productos: siguen dependiendo del endpoint HGI.
   if (!base) {
-    logger.stepInfo('HGI Cache: HGI_BASE_URL no configurado, omitiendo cache');
+    logger.stepInfo('HGI Cache: HGI_BASE_URL no configurado, omitiendo carga de productos');
     return;
   }
-  await cargarCiudades();
+
   await cargarProductos();
 }
 
@@ -111,11 +144,34 @@ function obtenerCodigoCiudad(nombreCiudad) {
     throw new Error('Ciudad no encontrada en HGI: (vacío)');
   }
   const clave = normalizarNombreCiudad(String(nombreCiudad));
-  const codigo = ciudadesMap.get(clave);
-  if (codigo == null) {
+
+  // O(1): evita repetir fuzzy search y lecturas del mapa.
+  if (cacheCodigoCiudad.has(clave)) {
+    const cached = cacheCodigoCiudad.get(clave);
+    if (cached != null) return cached;
     throw new Error(`Ciudad no encontrada en HGI: ${nombreCiudad}`);
   }
-  return codigo;
+
+  const codigo = ciudadesMap.get(clave);
+  if (codigo != null) {
+    cacheCodigoCiudad.set(clave, codigo);
+    return codigo;
+  }
+
+  // Fuzzy match local para corregir typos o variaciones menores.
+  let codigoFuzzy = null;
+  if (fuseCiudades) {
+    const res = fuseCiudades.search(clave);
+    const mejorKey = res?.[0]?.item ?? null;
+    if (mejorKey) {
+      const candidato = ciudadesMap.get(mejorKey);
+      if (candidato != null) codigoFuzzy = candidato;
+    }
+  }
+
+  cacheCodigoCiudad.set(clave, codigoFuzzy); // puede ser null (para no reintentar)
+  if (codigoFuzzy != null) return codigoFuzzy;
+  throw new Error(`Ciudad no encontrada en HGI: ${nombreCiudad}`);
 }
 
 function obtenerUnidadProducto(sku) {

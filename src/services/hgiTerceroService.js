@@ -1,10 +1,10 @@
-const axios = require('axios');
 const config = require('../config');
 const logger = require('./logger');
+const { hgiRequest } = require('./hgiAuthService');
 
 const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
 
-async function crearOActualizarTercero(terceroData, token) {
+async function crearOActualizarTercero(terceroData) {
   const payload = [
     {
       NumeroIdentificacion: terceroData.numeroIdentificacion,
@@ -21,11 +21,11 @@ async function crearOActualizarTercero(terceroData, token) {
   ];
 
   const url = `${base}/Api/Terceros/Crear`;
-  const { data } = await axios.post(url, payload, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+  const { data } = await hgiRequest({
+    method: 'post',
+    url,
+    headers: { 'Content-Type': 'application/json' },
+    data: payload,
   });
 
   const first = Array.isArray(data) ? data[0] : data;

@@ -10,18 +10,21 @@ async function handleOrderCompleted(req, res) {
     const payload = JSON.parse(bodyStr);
     logger.payload('Payload crudo de Shopify', payload);
 
-    await orderService.processOrder(req.body);
+    const result = await orderService.processOrder(req.body);
 
     logger.section('PROCESO COMPLETADO');
     logger.stepOk('Orden procesada y enviada a API externa');
+
+    return res.status(200).json(result);
   } catch (error) {
     logger.section('ERROR EN PROCESAMIENTO');
     logger.stepErr(error.message);
     // Responder 200 para que Shopify no reintente infinitamente
+    if (!res.headersSent) {
+      return res.status(200).json({ ok: false, error: error.message });
+    }
+    return;
   }
-
-  logger.stepInfo('Respondiendo 200 OK a Shopify\n');
-  res.status(200).send('OK');
 }
 
 module.exports = {
