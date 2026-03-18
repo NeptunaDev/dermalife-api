@@ -25,7 +25,38 @@ async function cargarCiudades() {
     params: { codigo: '*' },
     headers: { Authorization: `Bearer ${token}` },
   });
-  const lista = Array.isArray(data) ? data : [];
+  // Mostrar estructura real para ajustar el parseo (primeros 300 chars)
+  const preview = (() => {
+    try {
+      return JSON.stringify(data).substring(0, 300);
+    } catch {
+      return String(data).substring(0, 300);
+    }
+  })();
+  logger.stepInfo('HGI Cache: estructura respuesta ciudades: ' + preview);
+
+  // Algunas versiones devuelven array directo y otras envuelven en propiedad
+  let lista = [];
+  if (Array.isArray(data)) {
+    lista = data;
+  } else if (data && typeof data === 'object') {
+    const posibleArray =
+      data.Ciudades ||
+      data.ciudades ||
+      data.Data ||
+      data.data ||
+      data.Resultado ||
+      data.resultado ||
+      data.Items ||
+      data.items;
+    if (Array.isArray(posibleArray)) {
+      lista = posibleArray;
+    } else {
+      // fallback: primer array encontrado en propiedades
+      const firstArray = Object.values(data).find((v) => Array.isArray(v));
+      if (Array.isArray(firstArray)) lista = firstArray;
+    }
+  }
   ciudadesMap.clear();
   for (const item of lista) {
     const nombre = item.Nombre ?? item.nombre ?? '';
