@@ -5,6 +5,11 @@ const { mapearOrdenShopifyParaHGI } = require('../mappers/shopifyToHgi');
 const hgiCacheService = require('./hgiCacheService');
 const { crearOActualizarTercero } = require('./hgiTerceroService');
 const { crearEncabezadoFAC, crearDetalleFAC } = require('./hgiDocumentService');
+const {
+  upsertOrderPending,
+  markOrderCreated,
+  recordOrderFailure,
+} = require('./orderPersistenceService');
 
 function buildPayload(order) {
   return {
@@ -78,41 +83,74 @@ async function processOrder(rawBody) {
   const order = JSON.parse(bodyStr);
   logger.stepOk('Body parseado correctamente');
 
-  const { terceroData, docData, items } = mapearOrdenShopifyParaHGI(order);
-  logger.stepInfo(`Orden mapeada: tercero ${terceroData.numeroIdentificacion}, ${items.length} ítem(s)`);
+  const orderNumber = String(order.order_number ?? order.name ?? 'UNKNOWN');
+  const persisted = upsertOrderPending(orderNumber, bodyStr);
+  // Si ya fue procesada y marcada como creada, evitamos duplicar side-effects en HGI.
+  if (persisted.estado === 'creado') {
+    return {
+      uuid: persisted.uuid,
+      estado: persisted.estado,
+      numeroDoc: persisted.numero_doc,
+      order_number: orderNumber,
+    };
+  }
+
+  let terceroData;
+  let docData;
+  let items;
+  try {
+    ({ terceroData, docData, items } = mapearOrdenShopifyParaHGI(order));
+  } catch (error) {
+    recordOrderFailure(persisted.uuid, { paso: 'mapeo', error });
+    throw error;
+  }
+
+  logger.stepInfo(
+    `Orden mapeada: tercero ${terceroData.numeroIdentificacion}, ${items.length} ítem(s)`,
+  );
 
   if (items.length === 0) {
     logger.stepErr('No hay ítems con SKU para facturar en HGI');
-    throw new Error('No hay ítems con SKU para facturar en HGI');
+    const error = new Error('No hay ítems con SKU para facturar en HGI');
+    recordOrderFailure(persisted.uuid, { paso: 'mapeo', error });
+    throw error;
   }
 
   logger.stepInfo('Obteniendo código ciudad desde caché...');
-  const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(terceroData.ciudad);
-  terceroData.codigoCiudad = codigoCiudad;
+  try {
+    const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(terceroData.ciudad);
+    terceroData.codigoCiudad = codigoCiudad;
+  } catch (error) {
+    recordOrderFailure(persisted.uuid, { paso: 'ciudad', error });
+    throw error;
+  }
 
   logger.stepInfo('Creando o actualizando tercero en HGI...');
-  await crearOActualizarTercero(terceroData);
+  try {
+    await crearOActualizarTercero(terceroData);
+  } catch (error) {
+    recordOrderFailure(persisted.uuid, { paso: 'tercero', error });
+    throw error;
+  }
 
   logger.stepInfo('Creando encabezado FAC en HGI...');
-  // const numeroDoc = await crearEncabezadoFAC(docData);
-  // if (numeroDoc == null) {
-  //   throw new Error('HGI: no se obtuvo número de documento del encabezado');
-  // }
+  const numeroDoc = await crearEncabezadoFAC(docData);
+  if (numeroDoc == null) {
+    throw new Error('HGI: no se obtuvo número de documento del encabezado');
+  }
 
-  // for (const item of items) {
-  //   logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
-  //   await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha);
-  // }
+  for (const item of items) {
+    logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
+    await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha);
+  }
 
-  // logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
+  logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
+  markOrderCreated(persisted.uuid, numeroDoc);
   return {
-    // orden_numero: order.order_number,
-    // numeroDoc,
-    // terceroData,
-    // itemsCount: items.length,
-    ...docData,
-    ...terceroData,
-    ...items,
+    orden_numero: order.order_number,
+    numeroDoc,
+    terceroData,
+    itemsCount: items.length,
   };
 }
 

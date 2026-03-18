@@ -7,7 +7,7 @@ const router = express.Router();
 router.post(
   '/order-completed',
   express.raw({ type: 'application/json' }),
-  // verifyShopifyHmac,
+  verifyShopifyHmac,
   webhookController.handleOrderCompleted
 );
 
