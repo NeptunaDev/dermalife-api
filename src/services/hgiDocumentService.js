@@ -98,6 +98,7 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
       ActivoFijo: "0",
     },
   ];
+  console.log("🚀 ~ crearDetalleFAC ~ payload:", payload);
 
   const url = `${base}/Api/Documentos/CrearDetalle`;
   const { data } = await hgiRequest({
