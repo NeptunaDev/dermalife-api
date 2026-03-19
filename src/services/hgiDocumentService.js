@@ -66,6 +66,7 @@ async function crearEncabezadoFAC(docData) {
 }
 
 async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
+  console.log("🚀 ~ crearDetalleFAC ~ item:", item);
   const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
 
   const payload = [

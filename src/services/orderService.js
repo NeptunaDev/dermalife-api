@@ -1,15 +1,15 @@
-const config = require('../config');
-const { validatePayload } = require('../schemas/orderSchema');
-const logger = require('./logger');
-const { mapearOrdenShopifyParaHGI } = require('../mappers/shopifyToHgi');
-const hgiCacheService = require('./hgiCacheService');
-const { crearOActualizarTercero } = require('./hgiTerceroService');
-const { crearEncabezadoFAC, crearDetalleFAC } = require('./hgiDocumentService');
+const config = require("../config");
+const { validatePayload } = require("../schemas/orderSchema");
+const logger = require("./logger");
+const { mapearOrdenShopifyParaHGI } = require("../mappers/shopifyToHgi");
+const hgiCacheService = require("./hgiCacheService");
+const { crearOActualizarTercero } = require("./hgiTerceroService");
+const { crearEncabezadoFAC, crearDetalleFAC } = require("./hgiDocumentService");
 const {
   upsertOrderPending,
   markOrderCreated,
   recordOrderFailure,
-} = require('./orderPersistenceService');
+} = require("./orderPersistenceService");
 
 function buildPayload(order) {
   return {
@@ -24,7 +24,8 @@ function buildPayload(order) {
 
     cliente: {
       id: order.customer?.id,
-      nombre: `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim(),
+      nombre:
+        `${order.customer?.first_name || ""} ${order.customer?.last_name || ""}`.trim(),
       email: order.customer?.email,
       telefono: order.customer?.phone,
     },
@@ -59,9 +60,9 @@ async function forwardToExternalApi(payload) {
 
   logger.stepInfo(`Enviando a API externa: ${url}`);
   const response = await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
@@ -78,15 +79,16 @@ async function forwardToExternalApi(payload) {
 }
 
 async function processOrder(rawBody) {
-  logger.stepInfo('Convirtiendo body raw a JSON...');
-  const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
+  logger.stepInfo("Convirtiendo body raw a JSON...");
+  const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : rawBody;
   const order = JSON.parse(bodyStr);
-  logger.stepOk('Body parseado correctamente');
+  console.log("🚀 ~ processOrder ~ order:", order);
+  logger.stepOk("Body parseado correctamente");
 
-  const orderNumber = String(order.order_number ?? order.name ?? 'UNKNOWN');
+  const orderNumber = String(order.order_number ?? order.name ?? "UNKNOWN");
   const persisted = upsertOrderPending(orderNumber, bodyStr);
   // Si ya fue procesada y marcada como creada, evitamos duplicar side-effects en HGI.
-  if (persisted.estado === 'creado') {
+  if (persisted.estado === "creado") {
     return {
       uuid: persisted.uuid,
       estado: persisted.estado,
@@ -100,8 +102,9 @@ async function processOrder(rawBody) {
   let items;
   try {
     ({ terceroData, docData, items } = mapearOrdenShopifyParaHGI(order));
+    console.log("🚀 ~ processOrder ~ items:", items);
   } catch (error) {
-    recordOrderFailure(persisted.uuid, { paso: 'mapeo', error });
+    recordOrderFailure(persisted.uuid, { paso: "mapeo", error });
     throw error;
   }
 
@@ -110,41 +113,50 @@ async function processOrder(rawBody) {
   );
 
   if (items.length === 0) {
-    logger.stepErr('No hay ítems con SKU para facturar en HGI');
-    const error = new Error('No hay ítems con SKU para facturar en HGI');
-    recordOrderFailure(persisted.uuid, { paso: 'mapeo', error });
+    logger.stepErr("No hay ítems con SKU para facturar en HGI");
+    const error = new Error("No hay ítems con SKU para facturar en HGI");
+    recordOrderFailure(persisted.uuid, { paso: "mapeo", error });
     throw error;
   }
 
-  logger.stepInfo('Obteniendo código ciudad desde caché...');
+  logger.stepInfo("Obteniendo código ciudad desde caché...");
   try {
-    const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(terceroData.ciudad);
+    const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(
+      terceroData.ciudad,
+    );
     terceroData.codigoCiudad = codigoCiudad;
   } catch (error) {
-    recordOrderFailure(persisted.uuid, { paso: 'ciudad', error });
+    recordOrderFailure(persisted.uuid, { paso: "ciudad", error });
     throw error;
   }
 
-  logger.stepInfo('Creando o actualizando tercero en HGI...');
+  logger.stepInfo("Creando o actualizando tercero en HGI...");
   try {
     await crearOActualizarTercero(terceroData);
   } catch (error) {
-    recordOrderFailure(persisted.uuid, { paso: 'tercero', error });
+    recordOrderFailure(persisted.uuid, { paso: "tercero", error });
     throw error;
   }
 
-  logger.stepInfo('Creando encabezado FAC en HGI...');
+  logger.stepInfo("Creando encabezado FAC en HGI...");
   const numeroDoc = await crearEncabezadoFAC(docData);
   if (numeroDoc == null) {
-    throw new Error('HGI: no se obtuvo número de documento del encabezado');
+    throw new Error("HGI: no se obtuvo número de documento del encabezado");
   }
 
   for (const item of items) {
     logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
-    await crearDetalleFAC(numeroDoc, item, terceroData.numeroIdentificacion, docData.fecha);
+    await crearDetalleFAC(
+      numeroDoc,
+      item,
+      terceroData.numeroIdentificacion,
+      docData.fecha,
+    );
   }
 
-  logger.stepOk(`FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`);
+  logger.stepOk(
+    `FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`,
+  );
   markOrderCreated(persisted.uuid, numeroDoc);
   return {
     orden_numero: order.order_number,
