@@ -66,7 +66,14 @@ async function crearEncabezadoFAC(docData) {
 }
 
 async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
-  console.log("🚀 ~ crearDetalleFAC ~ item:", item);
+  const cantidad = Number(item.cantidad);
+  if (!Number.isFinite(cantidad) || cantidad <= 0) {
+    logger.stepErr(
+      `HGI CrearDetalle: cantidad inválida para SKU ${item.sku}: ${item.cantidad}`,
+    );
+    return;
+  }
+
   const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
 
   const payload = [
@@ -75,7 +82,7 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
       Transaccion: "67",
       Documento: numeroDoc,
       Producto: item.sku,
-      Cantidad: item.cantidad,
+      Cantidad: cantidad,
       Bodega: "5",
       Tercero: numeroIdentificacion,
       Vinculado: "0",
@@ -92,14 +99,15 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
       Serie3: "0",
       Descripcion1: "0",
       CodigoUbicacion: "0",
-      CantidadDocumento: 0,
+      // HGI suele persistir la cantidad del ítem del documento en este campo;
+      // si se deja en 0, la respuesta devuelve Cantidad/CantidadDocumento en 0 aunque envíes Cantidad.
+      CantidadDocumento: cantidad,
       Fecha1: fecha,
       Fecha2: fecha,
       ProductoDescripcion: "0",
       ActivoFijo: "0",
     },
   ];
-  console.log("🚀 ~ crearDetalleFAC ~ payload:", payload);
 
   const url = `${base}/Api/Documentos/CrearDetalle`;
   const { data } = await hgiRequest({
@@ -108,8 +116,6 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
     headers: { "Content-Type": "application/json" },
     data: payload,
   });
-  console.log("🚀 ~ crearDetalleFAC ~ data:", data);
-
   const first = Array.isArray(data) ? data[0] : data;
   const err = first?.Error;
   if (err != null) {
