@@ -75,7 +75,7 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
       Transaccion: "67",
       Documento: numeroDoc,
       Producto: item.sku,
-      Cantidad: item.quantity,
+      Cantidad: item.cantidad,
       Bodega: "5",
       Tercero: numeroIdentificacion,
       Vinculado: "0",
