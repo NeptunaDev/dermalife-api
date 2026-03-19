@@ -108,6 +108,7 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
     headers: { "Content-Type": "application/json" },
     data: payload,
   });
+  console.log("🚀 ~ crearDetalleFAC ~ data:", data);
 
   const first = Array.isArray(data) ? data[0] : data;
   const err = first?.Error;
