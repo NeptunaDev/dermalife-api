@@ -4,6 +4,13 @@ module.exports = {
   port: process.env.PORT || 3000,
   shopify: {
     webhookSecret: process.env.SHOPIFY_WEBHOOK_SECRET || '',
+    admin: {
+      // Ej: rj1vzw-dy.myshopify.com
+      storeDomain: process.env.SHOPIFY_STORE_DOMAIN || '',
+      apiVersion: process.env.SHOPIFY_ADMIN_API_VERSION || '2026-01',
+      oauthClientId: process.env.SHOPIFY_CLIENT_ID || '',
+      oauthClientSecret: process.env.SHOPIFY_CLIENT_SECRET || '',
+    },
   },
   apiExterna: {
     url: process.env.API_EXTERNA_URL || 'https://tu-api-externa.com/ordenes',
