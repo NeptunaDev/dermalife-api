@@ -325,11 +325,48 @@ async function refreshTokenFromHgiAndStore() {
   }
 }
 
+function getHgiManualTokenOverride() {
+  const raw = String(config.hgi?.manualToken || "").trim();
+  if (!raw) return null;
+  if (process.env.NODE_ENV === "production") return null;
+  return normalizeToken(raw);
+}
+
 async function hgiRequest(axiosRequestConfig, { retryOnAuthFailure = true } = {}) {
   const baseConfig = {
     ...axiosRequestConfig,
     headers: { ...(axiosRequestConfig?.headers || {}) },
   };
+
+  const manualToken = getHgiManualTokenOverride();
+  if (manualToken) {
+    logger.stepInfo(
+      "HGI: usando HGI_MANUAL_TOKEN (override de desarrollo; sin refresh automático)",
+    );
+    const attemptStart = Date.now();
+    try {
+      const res = await axios({
+        ...baseConfig,
+        headers: {
+          ...baseConfig.headers,
+          Authorization: `Bearer ${manualToken}`,
+        },
+      });
+      const dt = Date.now() - attemptStart;
+      logger.stepInfo(
+        `HGI: request ok en ${dt}ms (${axiosRequestConfig?.method || "request"} ${axiosRequestConfig?.url || ""}) [manual token]`,
+      );
+      return res;
+    } catch (err) {
+      const dt = Date.now() - attemptStart;
+      logger.stepErr(
+        `HGI: request falló en ${dt}ms (${axiosRequestConfig?.method || "request"} ${axiosRequestConfig?.url || ""}) [manual token]: ${
+          err?.response?.status ? `status=${err.response.status}` : "error"
+        } ${err?.message || ""}`,
+      );
+      throw err;
+    }
+  }
 
   let refreshed = false;
   // 1 intento con token de CONSTANTS + 1 reintento después de refresh (si aplica)

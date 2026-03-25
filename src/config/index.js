@@ -13,6 +13,8 @@ module.exports = {
     baseUrl: process.env.HGI_BASE_URL || '',
     usuario: process.env.HGI_USUARIO || '',
     clave: process.env.HGI_CLAVE || '',
+    /** Solo fuera de production: JWT fijo para desarrollo (sin refresh automático). */
+    manualToken: process.env.HGI_MANUAL_TOKEN || '',
     codCompania: process.env.HGI_COD_COMPANIA || '1',
     codEmpresa: process.env.HGI_COD_EMPRESA || '1',
     tercero: {

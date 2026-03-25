@@ -7,6 +7,7 @@ const Fuse = require('fuse.js');
 
 const base = (config.hgi?.baseUrl || '').replace(/\/$/, '');
 const CIUDAD_JSON_PATH = path.resolve(__dirname, '../../data/ciudad/ciudad.json');
+const PRODUCTS_JSON_PATH = path.resolve(__dirname, '../../products.json');
 
 const ciudadesMap = new Map();
 const productosMap = new Map();
@@ -116,14 +117,29 @@ async function cargarProductos() {
   });
   const lista = Array.isArray(data) ? data : [];
   productosMap.clear();
+  /** @type {Record<string, object>} */
+  const productosPorCodigo = {};
   for (const item of lista) {
     const codigo = item.Codigo ?? item.codigo ?? '';
     const unidad = item.CodigoUnidad ?? item.codigoUnidad ?? 'UN';
     if (codigo) {
-      productosMap.set(String(codigo), String(unidad));
+      const key = String(codigo);
+      productosMap.set(key, String(unidad));
+      productosPorCodigo[key] = item;
     }
   }
-  logger.stepOk(`HGI Cache: ${productosMap.size} productos cargados`);
+  try {
+    fs.writeFileSync(
+      PRODUCTS_JSON_PATH,
+      JSON.stringify(productosPorCodigo, null, 2),
+      'utf8',
+    );
+  } catch (err) {
+    logger.stepErr(`HGI Cache: no se pudo escribir products.json: ${err.message}`);
+  }
+  logger.stepOk(
+    `HGI Cache: ${productosMap.size} productos cargados; products.json actualizado`,
+  );
 }
 
 async function inicializarCache() {
