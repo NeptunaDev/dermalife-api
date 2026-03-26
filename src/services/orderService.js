@@ -1,6 +1,16 @@
-const config = require('../config');
-const { validatePayload } = require('../schemas/orderSchema');
-const logger = require('./logger');
+const config = require("../config");
+const { validatePayload } = require("../schemas/orderSchema");
+const logger = require("./logger");
+const { mapearOrdenShopifyParaHGI } = require("../mappers/shopifyToHgi");
+const hgiCacheService = require("./hgiCacheService");
+const { crearOActualizarTercero } = require("./hgiTerceroService");
+const { crearEncabezadoFAC, crearDetalleFAC } = require("./hgiDocumentService");
+const {
+  beginOrderProcessingOrSkip,
+  releaseProcessingLock,
+  markOrderCreated,
+  recordOrderFailure,
+} = require("./orderPersistenceService");
 
 function buildPayload(order) {
   return {
@@ -15,7 +25,8 @@ function buildPayload(order) {
 
     cliente: {
       id: order.customer?.id,
-      nombre: `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim(),
+      nombre:
+        `${order.customer?.first_name || ""} ${order.customer?.last_name || ""}`.trim(),
       email: order.customer?.email,
       telefono: order.customer?.phone,
     },
@@ -50,9 +61,9 @@ async function forwardToExternalApi(payload) {
 
   logger.stepInfo(`Enviando a API externa: ${url}`);
   const response = await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
@@ -69,26 +80,135 @@ async function forwardToExternalApi(payload) {
 }
 
 async function processOrder(rawBody) {
-  logger.stepInfo('Convirtiendo body raw a JSON...');
-  const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody;
+  logger.stepInfo("Convirtiendo body raw a JSON...");
+  const bodyStr = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : rawBody;
   const order = JSON.parse(bodyStr);
-  logger.stepOk('Body parseado correctamente');
+  logger.stepOk("Body parseado correctamente");
 
-  logger.stepInfo('Construyendo payload para API externa...');
-  const payload = buildPayload(order);
-  logger.payload('Payload transformado', payload);
-  logger.stepOk(`Payload listo: orden #${payload.orden_numero}, ${payload.productos?.length || 0} producto(s)`);
+  const orderNumberDisplay = String(
+    order.order_number ?? order.name ?? "UNKNOWN",
+  );
+  const shopifyOrderId = String(order.id ?? orderNumberDisplay);
 
-  logger.stepInfo('Validando estructura con schema Joi...');
-  const { error } = validatePayload(payload);
-  if (error) {
-    logger.stepErr(`Validación fallida: ${error.message}`);
-    throw new Error(`Validación fallida: ${error.message}`);
+  const begin = beginOrderProcessingOrSkip({
+    shopifyOrderId,
+    orderNumberDisplay,
+    rawPayload: bodyStr,
+  });
+
+  if (begin.action === "skip_done") {
+    logger.stepInfo(
+      `Orden Shopify ${shopifyOrderId} ya facturada en HGI (sin duplicar).`,
+    );
+    return {
+      uuid: begin.uuid,
+      estado: "creado",
+      numeroDoc: begin.numero_doc,
+      order_number: orderNumberDisplay,
+      skipped: true,
+    };
   }
-  logger.stepOk('Validación pasada');
 
-  await forwardToExternalApi(payload);
-  return payload;
+  if (begin.action === "skip_inflight") {
+    logger.stepInfo(
+      `Orden Shopify ${shopifyOrderId}: otra petición está facturando ahora; no se crea segunda FAC.`,
+    );
+    return {
+      uuid: begin.uuid,
+      skipped: true,
+      reason: "duplicate_inflight",
+      order_number: orderNumberDisplay,
+      shopify_order_id: shopifyOrderId,
+    };
+  }
+
+  const persistedUuid = begin.uuid;
+  /** Si ya existe encabezado en HGI, no volver a `pendiente` (evita 2ª FAC en reintentos). */
+  let encabezadoCreadoEnHgi = false;
+  let numeroDocResultado = null;
+
+  try {
+    let terceroData;
+    let docData;
+    let items;
+    try {
+      ({ terceroData, docData, items } = mapearOrdenShopifyParaHGI(order));
+    } catch (error) {
+      recordOrderFailure(persistedUuid, { paso: "mapeo", error });
+      throw error;
+    }
+
+    logger.stepInfo(
+      `Orden mapeada: tercero ${terceroData.numeroIdentificacion}, ${items.length} ítem(s)`,
+    );
+
+    if (items.length === 0) {
+      logger.stepErr("No hay ítems con SKU para facturar en HGI");
+      const error = new Error("No hay ítems con SKU para facturar en HGI");
+      recordOrderFailure(persistedUuid, { paso: "mapeo", error });
+      throw error;
+    }
+
+    logger.stepInfo("Obteniendo código ciudad desde caché...");
+    try {
+      const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(
+        terceroData.ciudad,
+      );
+      terceroData.codigoCiudad = codigoCiudad;
+    } catch (error) {
+      recordOrderFailure(persistedUuid, { paso: "ciudad", error });
+      throw error;
+    }
+
+    logger.stepInfo("Creando o actualizando tercero en HGI...");
+    try {
+      await crearOActualizarTercero(terceroData);
+    } catch (error) {
+      recordOrderFailure(persistedUuid, { paso: "tercero", error });
+      throw error;
+    }
+
+    logger.stepInfo("Creando encabezado FAC en HGI...");
+    const numeroDoc = await crearEncabezadoFAC(docData);
+    if (numeroDoc == null) {
+      throw new Error("HGI: no se obtuvo número de documento del encabezado");
+    }
+    encabezadoCreadoEnHgi = true;
+    numeroDocResultado = numeroDoc;
+
+    for (const item of items) {
+      logger.stepInfo(`Creando detalle FAC para SKU ${item.sku}...`);
+      await crearDetalleFAC(
+        numeroDoc,
+        item,
+        terceroData.numeroIdentificacion,
+        docData.fecha,
+      );
+    }
+
+    logger.stepOk(
+      `FAC #${numeroDoc} creada en HGI para orden Shopify #${order.order_number}`,
+    );
+    markOrderCreated(persistedUuid, numeroDoc);
+    return {
+      orden_numero: order.order_number,
+      numeroDoc,
+      terceroData,
+      itemsCount: items.length,
+      uuid: persistedUuid,
+    };
+  } catch (error) {
+    if (!encabezadoCreadoEnHgi) {
+      releaseProcessingLock(persistedUuid);
+    } else {
+      logger.stepErr(
+        `Error después del encabezado FAC #${numeroDocResultado}; se marca orden como creada para evitar una segunda FAC en reintentos de Shopify.`,
+      );
+      recordOrderFailure(persistedUuid, { paso: "post_encabezado", error });
+      markOrderCreated(persistedUuid, numeroDocResultado);
+    }
+    throw error;
+  }
 }
 
 module.exports = {

@@ -2,3 +2,10 @@ node_modules/
 .env
 *.log
 .DS_Store
+data/*.db
+data/*.db-wal
+data/*.db-shm
+some.txt
+request_ciudad.json
+CONSTANTS.txt
+data/CONSTANTS.txt
