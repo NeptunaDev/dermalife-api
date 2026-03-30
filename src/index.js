@@ -1,6 +1,7 @@
 const app = require('./app');
 const config = require('./config');
 const logger = require('./services/logger');
+const inventoryCronService = require('./services/inventoryCronService');
 
 (async () => {
   try {
@@ -13,5 +14,6 @@ const logger = require('./services/logger');
     if (logger.isDev) {
       console.log(`\n${logger.c.green}${logger.c.bright}▶ Modo desarrollo activo - logs detallados habilitados${logger.c.reset}\n`);
     }
+    inventoryCronService.startInventoryCron();
   });
 })();
