@@ -102,7 +102,7 @@ async function cargarCiudades() {
 async function cargarProductos() {
   if (!base) return;
   const url = `${base}/Api/Productos/ObtenerProductos`;
-  logger.stepInfo('HGI Cache: cargando productos...');
+  logger.stepInfo(`HGI Cache: cargando productos desde ${url} ...`);
   const { data } = await hgiRequest({
     method: 'get',
     url,
@@ -134,8 +134,13 @@ async function cargarProductos() {
       JSON.stringify(productosPorCodigo, null, 2),
       'utf8',
     );
+    logger.stepInfo(`HGI Cache: products.json escrito en ${PRODUCTS_JSON_PATH}`);
   } catch (err) {
     logger.stepErr(`HGI Cache: no se pudo escribir products.json: ${err.message}`);
+    throw err;
+  }
+  if (Object.keys(productosPorCodigo).length === 0) {
+    throw new Error('HGI Cache: products.json quedó vacío');
   }
   logger.stepOk(
     `HGI Cache: ${productosMap.size} productos cargados; products.json actualizado`,
@@ -148,8 +153,7 @@ async function inicializarCache() {
 
   // Productos: siguen dependiendo del endpoint HGI.
   if (!base) {
-    logger.stepInfo('HGI Cache: HGI_BASE_URL no configurado, omitiendo carga de productos');
-    return;
+    throw new Error('HGI Cache: HGI_BASE_URL no configurado; no se puede cargar products.json');
   }
 
   await cargarProductos();
