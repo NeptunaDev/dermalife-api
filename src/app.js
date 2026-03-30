@@ -21,11 +21,7 @@ app.get('/health', (req, res) => {
 });
 
 async function init() {
-  try {
-    await hgiCacheService.inicializarCache();
-  } catch (err) {
-    logger.stepErr('Cache HGI: ' + (err.message || err));
-  }
+  await hgiCacheService.inicializarCache();
 }
 
 module.exports = app;
