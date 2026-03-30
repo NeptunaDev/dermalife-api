@@ -1,14 +1,30 @@
+# Dependencies
 node_modules/
+
+# Environment
 .env
+
+# Logs and OS files
 *.log
 .DS_Store
+
+# Local databases
 data/*.db
 data/*.db-wal
 data/*.db-shm
+
+# Local artifacts and generated files
 some.txt
 request_ciudad.json
 result.json
 inventory.json
 products.json
+prodcutos_not_found.json
+verify_productos_no_existe.json
+verify_productos_nombre_diferente.json
+missing products.json
+missing products.csv
+
+# Local token/cache files
 CONSTANTS.txt
 data/CONSTANTS.txt
