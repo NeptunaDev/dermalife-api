@@ -11,14 +11,27 @@ const c = {
 };
 
 const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'dev';
+const levelName = String(process.env.LOG_LEVEL || (isDev ? 'debug' : 'info')).toLowerCase();
+const LEVELS = {
+  none: 0,
+  error: 1,
+  info: 2,
+  debug: 3,
+};
+const currentLevel = LEVELS[levelName] ?? LEVELS.info;
+
+function canLog(level) {
+  return (LEVELS[level] ?? LEVELS.info) <= currentLevel;
+}
 
 function log(...args) {
-  if (!isDev) return;
+  if (!canLog('debug')) return;
   console.log(...args);
 }
 
 function step(tag, message, extra = '') {
-  if (!isDev) return;
+  const level = tag === 'ERR' ? 'error' : 'info';
+  if (!canLog(level)) return;
   const tagColor = tag === 'OK' ? c.green : tag === 'ERR' ? c.red : c.cyan;
   console.log(`${c.dim}[${new Date().toISOString()}]${c.reset} ${tagColor}${c.bright}[${tag}]${c.reset} ${message}${extra ? ` ${c.dim}${extra}${c.reset}` : ''}`);
 }
@@ -36,14 +49,14 @@ function stepInfo(message) {
 }
 
 function section(title) {
-  if (!isDev) return;
+  if (!canLog('debug')) return;
   console.log(`\n${c.magenta}${c.bright}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${c.reset}`);
   console.log(`${c.magenta}${c.bright}  ${title}${c.reset}`);
   console.log(`${c.magenta}${c.bright}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${c.reset}\n`);
 }
 
 function payload(label, data) {
-  if (!isDev) return;
+  if (!canLog('debug')) return;
   console.log(`${c.yellow}${c.bright}[${label}]${c.reset}`);
   console.log(`${c.dim}${JSON.stringify(data, null, 2)}${c.reset}\n`);
 }
@@ -57,5 +70,7 @@ module.exports = {
   section,
   payload,
   isDev,
+  levelName,
+  canLog,
   c,
 };
