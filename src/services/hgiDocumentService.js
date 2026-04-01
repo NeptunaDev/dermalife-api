@@ -22,7 +22,7 @@ async function crearEncabezadoFAC(docData) {
       Vendedor: "51",
       Transportador: "0",
       BodegaDestino: "0",
-      Bodega: "5",
+      Bodega: "1",
       Clase: "0",
       Moneda: "0",
       Sucursal: "0",
