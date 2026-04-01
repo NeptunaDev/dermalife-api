@@ -186,11 +186,17 @@ async function setInventoryQuantity(accessToken, inventoryItemId, quantity, wait
   }
 }
 
-async function updateVariantPrice(accessToken, productId, variantId, price, waitTurn) {
+async function updateVariantCompareAtPrice(
+  accessToken,
+  productId,
+  variantId,
+  compareAtPrice,
+  waitTurn,
+) {
   const mutation = `
-    mutation UpdateVariantPrice($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+    mutation UpdateVariantCompareAt($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants { id price }
+        productVariants { id compareAtPrice }
         userErrors { field message }
       }
     }
@@ -201,7 +207,7 @@ async function updateVariantPrice(accessToken, productId, variantId, price, wait
     variants: [
       {
         id: variantId,
-        price,
+        compareAtPrice,
       },
     ],
   };
@@ -258,7 +264,7 @@ async function runWorker(items, workerId) {
   let failed = 0;
   let processed = 0;
   const totalItems = items.length;
-  /** @type {Array<{ Codigo: string, Descripcion: string, sku: string, precio: string, total: number, status: "ACTIVE" | "ARCHIVED" }>} */
+  /** @type {Array<{ Codigo: string, Descripcion: string, sku: string, compareAtPrice: string, total: number, status: "ACTIVE" | "ARCHIVED" }>} */
   const notFound = [];
 
   const emitProgress = (currentSku) => {
@@ -289,7 +295,7 @@ async function runWorker(items, workerId) {
 
   for (const [sku, row] of items) {
     const total = toNumber(row?.total);
-    const price = toPriceString(row?.Precio1);
+    const compareAtPrice = toPriceString(row?.Precio1);
     const status = "ACTIVE";
     const descripcion = String(row?.Descripcion ?? row?.descripcion ?? "").trim();
 
@@ -307,12 +313,12 @@ async function runWorker(items, workerId) {
       continue;
     }
 
-    if (price == null) {
+    if (compareAtPrice == null) {
       skipped += 1;
       emitItemLog({
         action: "SKIP",
         sku,
-        reason: "missing/invalid Precio1",
+        reason: "missing/invalid Precio1 (compareAtPrice)",
         total,
         status,
       });
@@ -330,7 +336,7 @@ async function runWorker(items, workerId) {
           Codigo: sku,
           Descripcion: descripcion,
           sku,
-          precio: price,
+          compareAtPrice,
           total,
           status,
         });
@@ -340,7 +346,7 @@ async function runWorker(items, workerId) {
           sku,
           reason: "variant not found in Shopify",
           total,
-          precio: price,
+          compareAtPrice,
           status,
         });
       } else {
@@ -354,20 +360,26 @@ async function runWorker(items, workerId) {
             sku,
             reason: "missing Shopify IDs",
             total,
-            precio: price,
+            compareAtPrice,
             status,
           });
         } else {
           const qty = Math.trunc(total);
           await setInventoryQuantity(accessToken, inventoryItemId, qty, waitTurn);
-          await updateVariantPrice(accessToken, productId, variantId, price, waitTurn);
+          await updateVariantCompareAtPrice(
+            accessToken,
+            productId,
+            variantId,
+            compareAtPrice,
+            waitTurn,
+          );
           await updateProductStatus(accessToken, productId, waitTurn);
           ok += 1;
           emitItemLog({
             action: "OK",
             sku,
             qty,
-            precio: price,
+            compareAtPrice,
             status,
           });
         }
@@ -497,12 +509,12 @@ if (!isMainThread) {
             if (msg?.type === "item_log") {
               if (msg.action === "OK") {
                 console.log(
-                  `[Worker ${msg.workerId}] [OK] sku=${msg.sku} -> qty=${msg.qty}, precio=${msg.precio}, status=${msg.status}`,
+                  `[Worker ${msg.workerId}] [OK] sku=${msg.sku} -> qty=${msg.qty}, compareAtPrice=${msg.compareAtPrice}, status=${msg.status}`,
                 );
               } else {
                 const extra = [
                   msg.total != null ? `total=${msg.total}` : "",
-                  msg.precio != null ? `precio=${msg.precio}` : "",
+                  msg.compareAtPrice != null ? `compareAtPrice=${msg.compareAtPrice}` : "",
                   msg.status ? `status=${msg.status}` : "",
                 ]
                   .filter(Boolean)

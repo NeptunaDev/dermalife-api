@@ -20,10 +20,14 @@ result.json
 inventory.json
 products.json
 prodcutos_not_found.json
+no_vigente_not_found.json
 verify_productos_no_existe.json
 verify_productos_nombre_diferente.json
 missing products.json
 missing products.csv
+No vigentes.xls
+no_vigente_found.xls
+shopify.some
 
 # Local token/cache files
 CONSTANTS.txt
