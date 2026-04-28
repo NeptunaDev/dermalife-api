@@ -5,12 +5,31 @@ const { hgiRequest } = require("./hgiAuthService");
 
 const base = (config.hgi?.baseUrl || "").replace(/\/$/, "");
 
+function resolverTransaccionPorGateway(paymentGatewayNames) {
+  if (!Array.isArray(paymentGatewayNames)) return "67";
+
+  const gatewaysNormalizados = paymentGatewayNames
+    .filter((gateway) => typeof gateway === "string")
+    .map((gateway) => gateway.toLowerCase());
+
+  if (gatewaysNormalizados.some((gateway) => gateway.includes("addi payment"))) {
+    return "108";
+  }
+
+  if (gatewaysNormalizados.some((gateway) => gateway.includes("wompi"))) {
+    return "67";
+  }
+
+  return "67";
+}
+
 async function crearEncabezadoFAC(docData) {
+  const transaccion = resolverTransaccionPorGateway(docData?.payment_gateway_names);
   const payload = [
     {
       Empresa: 1,
       Compania: 1,
-      Transaccion: "67",
+      Transaccion: transaccion,
       NumeroDocumento: docData.numeroDocumento,
       Fecha: docData.fecha,
       Ano: docData.ano,
@@ -65,7 +84,13 @@ async function crearEncabezadoFAC(docData) {
   return numero;
 }
 
-async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
+async function crearDetalleFAC(
+  numeroDoc,
+  item,
+  numeroIdentificacion,
+  fecha,
+  paymentGatewayNames,
+) {
   const cantidad = Number(item.cantidad);
   if (!Number.isFinite(cantidad) || cantidad <= 0) {
     logger.stepErr(
@@ -75,11 +100,12 @@ async function crearDetalleFAC(numeroDoc, item, numeroIdentificacion, fecha) {
   }
 
   const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
+  const transaccion = resolverTransaccionPorGateway(paymentGatewayNames);
 
   const payload = [
     {
       Empresa: 1,
-      Transaccion: "67",
+      Transaccion: transaccion,
       Documento: numeroDoc,
       Producto: item.sku,
       Cantidad: cantidad,

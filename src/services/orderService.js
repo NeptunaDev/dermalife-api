@@ -183,6 +183,7 @@ async function processOrder(rawBody) {
         item,
         terceroData.numeroIdentificacion,
         docData.fecha,
+        docData.payment_gateway_names,
       );
     }
 
