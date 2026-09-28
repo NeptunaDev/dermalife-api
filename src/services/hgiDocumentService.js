@@ -109,6 +109,10 @@ async function crearDetalleFAC(
       Documento: numeroDoc,
       Producto: item.sku,
       Cantidad: cantidad,
+      ValorUnitario: item.valorUnitario ?? 0,
+      ValorTotal: item.valorTotal ?? 0,
+      PorcentajeDescuento: item.porcentajeDescuento ?? 0,
+      ValorDescuento: item.valorDescuento ?? 0,
       Bodega: "1",
       Tercero: numeroIdentificacion,
       Vinculado: "0",
@@ -149,7 +153,9 @@ async function crearDetalleFAC(
     logger.stepErr(`HGI CrearDetalle SKU ${item.sku}: ${mensaje}`);
     return;
   }
-  logger.stepOk(`HGI: detalle creado para SKU ${item.sku}`);
+  logger.stepOk(
+    `HGI: detalle creado para SKU ${item.sku} (valorUnitario=${item.valorUnitario}, valorTotal=${item.valorTotal}, descuento=${item.valorDescuento ?? 0})`,
+  );
 }
 
 module.exports = {

@@ -1,5 +1,9 @@
 const logger = require("../services/logger");
 
+function redondear2(valor) {
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
+}
+
 function formatoFecha(createdAt) {
   const d = new Date(createdAt);
   const y = d.getFullYear();
@@ -66,10 +70,26 @@ function mapearOrdenShopifyParaHGI(order) {
       );
       continue;
     }
+    const cantidad = item.quantity;
+    const precioUnitarioBruto = parseFloat(item.price) || 0;
+    // total_discount ya trae la suma de descuentos (código promocional o
+    // automático) aplicados a esta línea, calculada por Shopify en pesos.
+    const valorDescuento = redondear2(parseFloat(item.total_discount) || 0);
+    const valorBruto = redondear2(precioUnitarioBruto * cantidad);
+    const valorTotal = redondear2(valorBruto - valorDescuento);
+    const valorUnitario =
+      cantidad > 0 ? redondear2(valorTotal / cantidad) : precioUnitarioBruto;
+    const porcentajeDescuento =
+      valorBruto > 0 ? redondear2((valorDescuento / valorBruto) * 100) : 0;
+
     items.push({
       sku,
-      cantidad: item.quantity,
+      cantidad,
       nombre: item.title ?? item.name ?? "",
+      valorUnitario,
+      valorTotal,
+      valorDescuento,
+      porcentajeDescuento,
     });
   }
 
