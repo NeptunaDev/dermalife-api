@@ -24,6 +24,11 @@ module.exports = {
     manualToken: process.env.HGI_MANUAL_TOKEN || '',
     codCompania: process.env.HGI_COD_COMPANIA || '1',
     codEmpresa: process.env.HGI_COD_EMPRESA || '1',
+    // Tasa de IVA por defecto (fracción) para deflactar ValorTotal/ValorDescuento en
+    // CrearDetalle cuando no se resuelve la tarifa real del producto. Ver shopifyToHgi.js.
+    ivaRateDefault: process.env.HGI_IVA_RATE_DEFAULT
+      ? Number(process.env.HGI_IVA_RATE_DEFAULT)
+      : 0.19,
     tercero: {
       codigoTipoTercero: process.env.HGI_CODIGO_TIPO_TERCERO || '10',
       codigoVendedor: process.env.HGI_CODIGO_VENDEDOR || '84',

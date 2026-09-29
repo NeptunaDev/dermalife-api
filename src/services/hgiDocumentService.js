@@ -109,8 +109,11 @@ async function crearDetalleFAC(
       Documento: numeroDoc,
       Producto: item.sku,
       Cantidad: cantidad,
-      // ValorUnitario/ValorTotal NO se envían: HGI los ignora en CrearDetalle (confirmado
-      // con scripts/test-nombre-campo-precio.js) y calcula Total = Precio1 interno - ValorDescuento.
+      // ValorUnitario/ValorTotal SÍ se envían: con la transacción 67 en modo "Precio
+      // Producto Fijo" HGI los toma tal cual (confirmado con FAC #18406). ValorTotal va
+      // sin IVA (bruto pre-descuento); ValorDescuento también sin IVA. Ver shopifyToHgi.js.
+      ValorUnitario: item.valorUnitario ?? 0,
+      ValorTotal: item.valorTotal ?? 0,
       PorcentajeDescuento: item.porcentajeDescuento ?? 0,
       ValorDescuento: item.valorDescuento ?? 0,
       Bodega: "1",
@@ -154,7 +157,7 @@ async function crearDetalleFAC(
     return;
   }
   logger.stepOk(
-    `HGI: detalle creado para SKU ${item.sku} (descuento=${item.valorDescuento ?? 0}, %descuento=${item.porcentajeDescuento ?? 0}; precio lo pone HGI desde su catálogo, esperado≈${item.valorUnitario})`,
+    `HGI: detalle creado para SKU ${item.sku} (valorUnitario=${item.valorUnitario}, valorTotal=${item.valorTotal}, descuento=${item.valorDescuento ?? 0}, %descuento=${item.porcentajeDescuento ?? 0})`,
   );
 }
 
