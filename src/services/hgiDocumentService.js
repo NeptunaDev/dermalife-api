@@ -109,11 +109,10 @@ async function crearDetalleFAC(
       Documento: numeroDoc,
       Producto: item.sku,
       Cantidad: cantidad,
-      // ValorUnitario/ValorTotal SÍ se envían: con la transacción 67 en modo "Precio
-      // Producto Fijo" HGI los toma tal cual (confirmado con FAC #18406). ValorTotal va
-      // sin IVA (bruto pre-descuento); ValorDescuento también sin IVA. Ver shopifyToHgi.js.
+      // ValorTotal NO se envía: prueba en curso para que HGI lo calcule solo desde su
+      // Precio1 interno (IvaIncluido=1 en la transacción 67). item.valorTotal se sigue
+      // calculando en shopifyToHgi.js solo para logging/comparación, no se manda aquí.
       ValorUnitario: item.valorUnitario ?? 0,
-      ValorTotal: item.valorTotal ?? 0,
       PorcentajeDescuento: item.porcentajeDescuento ?? 0,
       ValorDescuento: item.valorDescuento ?? 0,
       Bodega: "1",

@@ -177,7 +177,15 @@ async function processOrder(rawBody) {
     // Esto no bloquea la factura, solo deja evidencia para detectar el drift a tiempo.
     for (const item of items) {
       const precio1Hgi = hgiCacheService.obtenerPrecio1Producto(item.sku);
+      logger.stepInfo(
+        `HGI Precio1 SKU ${item.sku}: ${precio1Hgi == null ? "no encontrado en caché de productos" : precio1Hgi}`,
+      );
       if (precio1Hgi == null) continue;
+      if (precio1Hgi === 0) {
+        logger.stepErr(
+          `⚠️ Precio1=0 en HGI para SKU ${item.sku}: si la transacción usa el catálogo interno como base, el Total de esta línea saldrá negativo sin importar lo que enviemos en ValorUnitario/ValorTotal/ValorDescuento.`,
+        );
+      }
       const diferencia = Math.abs(precio1Hgi - item.valorUnitario);
       if (diferencia > 1) {
         logger.stepErr(
