@@ -2,6 +2,7 @@ const config = require("../config");
 const { validatePayload } = require("../schemas/orderSchema");
 const logger = require("./logger");
 const { mapearOrdenShopifyParaHGI } = require("../mappers/shopifyToHgi");
+const shopifyAdminService = require("./shopifyAdminService");
 const hgiCacheService = require("./hgiCacheService");
 const { crearOActualizarTercero } = require("./hgiTerceroService");
 const { crearEncabezadoFAC, crearDetalleFAC } = require("./hgiDocumentService");
@@ -131,8 +132,28 @@ async function processOrder(rawBody) {
     let terceroData;
     let docData;
     let items;
+
+    let compareAtPriceMap = new Map();
+    if (shopifyAdminService.estaConfigurado()) {
+      try {
+        const variantIds = (order.line_items || [])
+          .map((li) => li.variant_id)
+          .filter((id) => id != null);
+        compareAtPriceMap =
+          await shopifyAdminService.obtenerCompareAtPricePorVariantIds(variantIds);
+      } catch (error) {
+        logger.stepErr(
+          `No se pudo obtener compare_at_price de Shopify Admin API (se factura sin precio de lista): ${error.message}`,
+        );
+      }
+    } else {
+      logger.stepInfo(
+        "Shopify Admin API no configurada; se factura sin precio de lista (compare_at_price).",
+      );
+    }
+
     try {
-      ({ terceroData, docData, items } = mapearOrdenShopifyParaHGI(order));
+      ({ terceroData, docData, items } = mapearOrdenShopifyParaHGI(order, compareAtPriceMap));
     } catch (error) {
       recordOrderFailure(persistedUuid, { paso: "mapeo", error });
       throw error;

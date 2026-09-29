@@ -17,8 +17,11 @@ function formatoFecha(createdAt) {
 
 /**
  * Mapea el objeto order del webhook de Shopify a terceroData, docData e items para HGI.
+ * @param {object} order
+ * @param {Map<string, number|null>} [compareAtPriceMap] variant_id (string) -> compare_at_price,
+ *   obtenido de Shopify Admin API (el webhook no lo trae). Ver shopifyAdminService.
  */
-function mapearOrdenShopifyParaHGI(order) {
+function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
   const customer = order.customer || {};
   const shipping = order.shipping_address || {};
   const billing = order.billing_address || {};
@@ -71,16 +74,32 @@ function mapearOrdenShopifyParaHGI(order) {
       continue;
     }
     const cantidad = item.quantity;
-    const precioUnitarioBruto = parseFloat(item.price) || 0;
-    // total_discount ya trae la suma de descuentos (código promocional o
-    // automático) aplicados a esta línea, calculada por Shopify en pesos.
-    const valorDescuento = redondear2(parseFloat(item.total_discount) || 0);
-    const valorBruto = redondear2(precioUnitarioBruto * cantidad);
-    const valorTotal = redondear2(valorBruto - valorDescuento);
-    const valorUnitario =
-      cantidad > 0 ? redondear2(valorTotal / cantidad) : precioUnitarioBruto;
+    const precioVentaUnitario = parseFloat(item.price) || 0;
+    // total_discount = descuento por código promocional/automático aplicado a esta
+    // línea (adicional al precio ya rebajado en la variante), calculado por Shopify en pesos.
+    const totalDescuentoCodigo = redondear2(parseFloat(item.total_discount) || 0);
+
+    // compare_at_price no viene en el webhook de Shopify; se resuelve aparte
+    // (Shopify Admin API, por variant_id) y se pasa en compareAtPriceMap.
+    const variantId = item.variant_id != null ? String(item.variant_id) : null;
+    const compareAtPriceRaw = variantId ? compareAtPriceMap.get(variantId) : null;
+    const compareAtPrice =
+      typeof compareAtPriceRaw === "number" && Number.isFinite(compareAtPriceRaw)
+        ? compareAtPriceRaw
+        : null;
+
+    // Precio de lista para el desglose: solo si compare_at_price existe y es mayor
+    // al precio de venta (si no, no hay "descuento de lista" que mostrar y se usa price).
+    const hayPrecioDeLista = compareAtPrice != null && compareAtPrice > precioVentaUnitario;
+    const valorUnitario = hayPrecioDeLista ? compareAtPrice : precioVentaUnitario;
+
+    const valorBrutoLista = redondear2(valorUnitario * cantidad);
+    // Lo realmente cobrado al cliente (precio de venta x cantidad, menos código de descuento si aplica).
+    const valorNetoCobrado = redondear2(precioVentaUnitario * cantidad - totalDescuentoCodigo);
+    const valorDescuento = redondear2(valorBrutoLista - valorNetoCobrado);
+    const valorTotal = valorNetoCobrado;
     const porcentajeDescuento =
-      valorBruto > 0 ? redondear2((valorDescuento / valorBruto) * 100) : 0;
+      valorBrutoLista > 0 ? redondear2((valorDescuento / valorBrutoLista) * 100) : 0;
 
     items.push({
       sku,
