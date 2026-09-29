@@ -4,6 +4,10 @@ function redondear2(valor) {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
+function redondear4(valor) {
+  return Math.round((valor + Number.EPSILON) * 10000) / 10000;
+}
+
 function formatoFecha(createdAt) {
   const d = new Date(createdAt);
   const y = d.getFullYear();
@@ -98,8 +102,12 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
     const valorNetoCobrado = redondear2(precioVentaUnitario * cantidad - totalDescuentoCodigo);
     const valorDescuento = redondear2(valorBrutoLista - valorNetoCobrado);
     const valorTotal = valorNetoCobrado;
-    const porcentajeDescuento =
+    // HGI espera PorcentajeDescuento como fracción (0-1), no como porcentaje (0-100):
+    // multiplica x100 él mismo al mostrar "PDes%" en la factura. Confirmado con FAC #18577
+    // (SKU 33038): mandamos 98.21 y HGI mostró "9.821%" (98.21 x 100 de más).
+    const porcentajeDescuentoVisible =
       valorBrutoLista > 0 ? redondear2((valorDescuento / valorBrutoLista) * 100) : 0;
+    const porcentajeDescuento = redondear4(porcentajeDescuentoVisible / 100);
 
     items.push({
       sku,
