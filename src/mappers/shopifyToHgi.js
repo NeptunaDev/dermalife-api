@@ -1,14 +1,4 @@
 const logger = require("../services/logger");
-const config = require("../config");
-
-// Tasa de IVA por defecto (fracción, ej. 0.19 = 19%) cuando no se puede resolver
-// la tarifa real del producto (CodigoTarifaIVA). Confirmado con FAC #18406 (SKU 22292,
-// transacción 67 en modo "Precio Producto Fijo"): ValorTotal = ValorUnitario / (1+iva) y
-// ValorDescuento = (ValorUnitario - precio_cobrado) / (1+iva); ambos en pesos SIN IVA,
-// porque HGI arma el IVA aparte a partir de la base gravable (ValorTotal - ValorDescuento).
-// TODO: resolver la tarifa real por producto (CodigoTarifaIVA) en vez de usar un único
-// valor por defecto para todos los SKU, una vez se confirme el endpoint REST de tarifas.
-const IVA_RATE_DEFAULT = Number(config.hgi?.ivaRateDefault ?? 0.19);
 
 function redondear2(valor) {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
@@ -105,34 +95,22 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
     // Precio de lista para el desglose: solo si compare_at_price existe y es mayor
     // al precio de venta (si no, no hay "descuento de lista" que mostrar y se usa price).
     const hayPrecioDeLista = compareAtPrice != null && compareAtPrice > precioVentaUnitario;
-    // valorUnitario es SIEMPRE por unidad, con IVA incluido (así lo maneja el campo
-    // ValorUnitario de HGI: precio de catálogo/lista, no el neto pre-IVA).
+    // valorUnitario por unidad, tal cual viene de Shopify (con IVA incluido). La
+    // transacción 67 tiene IvaIncluido=1, así que HGI maneja el IVA internamente a
+    // partir de estos valores sin que nosotros deflactemos nada.
     const valorUnitario = hayPrecioDeLista ? compareAtPrice : precioVentaUnitario;
 
-    const ivaRate = IVA_RATE_DEFAULT;
-    const factorIva = 1 + ivaRate;
-
-    // ValorTotal en HGI = bruto de la línea (unitario x cantidad) ANTES de descuento y
-    // SIN IVA. HGI arma el IVA aparte a partir de (ValorTotal - ValorDescuento).
-    const valorTotal = redondear2((valorUnitario * cantidad) / factorIva);
-
-    // Lo realmente cobrado al cliente, con IVA incluido (precio de venta x cantidad,
-    // menos código de descuento si aplica). Se conserva sin deflactar para logging/reconciliación.
-    const valorNetoCobradoConIva = redondear2(
-      precioVentaUnitario * cantidad - totalDescuentoCodigo,
-    );
-    const valorNetoCobradoSinIva = redondear2(valorNetoCobradoConIva / factorIva);
-
-    // ValorDescuento va SIN IVA (deflactado), igual que ValorTotal: HGI resta este valor
-    // de ValorTotal para obtener la base gravable, y sobre esa base calcula el IVA.
-    const valorDescuento = redondear2(valorTotal - valorNetoCobradoSinIva);
+    const valorBrutoLista = redondear2(valorUnitario * cantidad);
+    // Lo realmente cobrado al cliente (precio de venta x cantidad, menos código de descuento si aplica).
+    const valorNetoCobrado = redondear2(precioVentaUnitario * cantidad - totalDescuentoCodigo);
+    const valorDescuento = redondear2(valorBrutoLista - valorNetoCobrado);
+    const valorTotal = valorBrutoLista;
 
     // HGI espera PorcentajeDescuento como fracción (0-1), no como porcentaje (0-100):
     // multiplica x100 él mismo al mostrar "PDes%" en la factura. Confirmado con FAC #18577
-    // (SKU 33038): mandamos 98.21 y HGI mostró "9.821%" (98.21 x 100 de más). Esta razón
-    // es la misma con o sin IVA (se cancela en la división), confirmado con FAC #18406.
+    // (SKU 33038): mandamos 98.21 y HGI mostró "9.821%" (98.21 x 100 de más).
     const porcentajeDescuentoVisible =
-      valorTotal > 0 ? redondear2((valorDescuento / valorTotal) * 100) : 0;
+      valorBrutoLista > 0 ? redondear2((valorDescuento / valorBrutoLista) * 100) : 0;
     const porcentajeDescuento = redondear4(porcentajeDescuentoVisible / 100);
 
     items.push({
@@ -143,8 +121,6 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
       valorTotal,
       valorDescuento,
       porcentajeDescuento,
-      // Solo para logging/reconciliación local; no se envía a HGI.
-      valorNetoCobradoConIva,
     });
   }
 
