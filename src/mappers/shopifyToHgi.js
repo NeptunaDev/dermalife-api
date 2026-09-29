@@ -8,6 +8,14 @@ function redondear4(valor) {
   return Math.round((valor + Number.EPSILON) * 10000) / 10000;
 }
 
+// HGI ignora ValorUnitario/PrecioUnitario en CrearDetalle (confirmado con
+// scripts/test-nombre-campo-precio.js: ambos campos volvieron en 0 en la respuesta)
+// y calcula Total = Precio catálogo (Precio1 interno) - ValorDescuento. ValorDescuento
+// se maneja en COP enteros (sin decimales), no en 2 decimales como el resto de valores.
+function redondearEntero(valor) {
+  return Math.round(valor);
+}
+
 function formatoFecha(createdAt) {
   const d = new Date(createdAt);
   const y = d.getFullYear();
@@ -100,7 +108,9 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
     const valorBrutoLista = redondear2(valorUnitario * cantidad);
     // Lo realmente cobrado al cliente (precio de venta x cantidad, menos código de descuento si aplica).
     const valorNetoCobrado = redondear2(precioVentaUnitario * cantidad - totalDescuentoCodigo);
-    const valorDescuento = redondear2(valorBrutoLista - valorNetoCobrado);
+    // ValorDescuento sí se envía a HGI (a diferencia de ValorUnitario/ValorTotal, que
+    // HGI ignora): en COP enteros, porque HGI lo resta directo de su Precio1 interno.
+    const valorDescuento = redondearEntero(valorBrutoLista - valorNetoCobrado);
     const valorTotal = valorNetoCobrado;
     // HGI espera PorcentajeDescuento como fracción (0-1), no como porcentaje (0-100):
     // multiplica x100 él mismo al mostrar "PDes%" en la factura. Confirmado con FAC #18577
@@ -113,6 +123,8 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
       sku,
       cantidad,
       nombre: item.title ?? item.name ?? "",
+      // valorUnitario/valorTotal ya NO se envían a HGI (los ignora), pero se conservan
+      // aquí para logging y para la validación de sincronización de precios en orderService.
       valorUnitario,
       valorTotal,
       valorDescuento,

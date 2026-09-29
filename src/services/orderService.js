@@ -170,6 +170,22 @@ async function processOrder(rawBody) {
       throw error;
     }
 
+    // Validación de sincronización: el ValorDescuento/PorcentajeDescuento que mandamos
+    // a HGI asume que su Precio1 (catálogo interno) coincide con el precio de lista que
+    // tomamos de Shopify (compare_at_price, o price si no hay rebaja). Si ambos se
+    // desincronizan, el Total que HGI calcule internamente no cuadrará con lo cobrado.
+    // Esto no bloquea la factura, solo deja evidencia para detectar el drift a tiempo.
+    for (const item of items) {
+      const precio1Hgi = hgiCacheService.obtenerPrecio1Producto(item.sku);
+      if (precio1Hgi == null) continue;
+      const diferencia = Math.abs(precio1Hgi - item.valorUnitario);
+      if (diferencia > 1) {
+        logger.stepErr(
+          `⚠️ Posible desincronización de precio SKU ${item.sku}: precio de lista Shopify=${item.valorUnitario}, Precio1 HGI=${precio1Hgi} (diferencia=${diferencia}). Verificar scripts/inventory_shopify.js.`,
+        );
+      }
+    }
+
     logger.stepInfo("Obteniendo código ciudad desde caché...");
     try {
       const codigoCiudad = hgiCacheService.obtenerCodigoCiudad(

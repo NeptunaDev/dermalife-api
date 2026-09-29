@@ -11,6 +11,7 @@ const PRODUCTS_JSON_PATH = path.resolve(__dirname, '../../products.json');
 
 const ciudadesMap = new Map();
 const productosMap = new Map();
+const precio1Map = new Map(); // sku -> Precio1 (HGI). Usado para validar sync con compare_at_price de Shopify.
 let fuseCiudades = null;
 const cacheCodigoCiudad = new Map(); // cache de O(1) por nombre normalizado
 
@@ -117,6 +118,7 @@ async function cargarProductos() {
   });
   const lista = Array.isArray(data) ? data : [];
   productosMap.clear();
+  precio1Map.clear();
   /** @type {Record<string, object>} */
   const productosPorCodigo = {};
   for (const item of lista) {
@@ -126,6 +128,10 @@ async function cargarProductos() {
       const key = String(codigo);
       productosMap.set(key, String(unidad));
       productosPorCodigo[key] = item;
+      const precio1 = Number(item.Precio1 ?? item.precio1);
+      if (Number.isFinite(precio1)) {
+        precio1Map.set(key, precio1);
+      }
     }
   }
   try {
@@ -204,8 +210,21 @@ function obtenerUnidadProducto(sku) {
   return unidad;
 }
 
+/**
+ * Precio1 del producto en HGI (el mismo campo que scripts/inventory_shopify.js sube
+ * a Shopify como compare_at_price). Se usa solo para validar en runtime que el precio
+ * de lista que Shopify reporta sigue sincronizado con el catálogo de HGI; nunca se
+ * envía a HGI directamente. Devuelve null si el producto no está en caché.
+ */
+function obtenerPrecio1Producto(sku) {
+  const codigo = sku != null ? String(sku).trim() : '';
+  const precio1 = precio1Map.get(codigo);
+  return typeof precio1 === 'number' && Number.isFinite(precio1) ? precio1 : null;
+}
+
 module.exports = {
   inicializarCache,
   obtenerCodigoCiudad,
   obtenerUnidadProducto,
+  obtenerPrecio1Producto,
 };

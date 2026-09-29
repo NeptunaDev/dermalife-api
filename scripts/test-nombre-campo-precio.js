@@ -123,7 +123,7 @@ async function main() {
     CentroCosto: "0",
     SubcentroCosto: "0",
     Vendedor: "51",
-    Unidad: "UND",
+    Unidad: "G", // unidad confirmada para el SKU 31017 en test-hgi.js
     Talla: "0",
     Color: "0",
     Lote: "0",
