@@ -104,6 +104,8 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
     // Lo realmente cobrado al cliente (precio de venta x cantidad, menos código de descuento si aplica).
     const valorNetoCobrado = redondear2(precioVentaUnitario * cantidad - totalDescuentoCodigo);
     const valorDescuento = redondear2(valorBrutoLista - valorNetoCobrado);
+    // Transacción 67 en modo 0 (Sin Precio): HGI calcula Total = ValorTotal - ValorDescuento,
+    // así que ValorTotal debe ser el precio de lista (bruto, antes de descuento), no lo neto cobrado.
     const valorTotal = valorBrutoLista;
 
     // HGI espera PorcentajeDescuento como fracción (0-1), no como porcentaje (0-100):

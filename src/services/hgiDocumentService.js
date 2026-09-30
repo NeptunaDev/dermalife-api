@@ -5,6 +5,10 @@ const { hgiRequest } = require("./hgiAuthService");
 
 const base = (config.hgi?.baseUrl || "").replace(/\/$/, "");
 
+function redondear2(valor) {
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
+}
+
 function resolverTransaccionPorGateway(paymentGatewayNames) {
   if (!Array.isArray(paymentGatewayNames)) return "67";
 
@@ -102,6 +106,15 @@ async function crearDetalleFAC(
   const unidad = hgiCacheService.obtenerUnidadProducto(item.sku);
   const transaccion = resolverTransaccionPorGateway(paymentGatewayNames);
 
+  // Tarifa de IVA real del producto (fracción: 0.19, 0.05, o 0 si es exento). Confirmado
+  // con FAC #18576 (SKU 65154, IVA 19%) y FAC #18577 (SKU 15323, ValorIva=0 → sin dividir):
+  // HGI espera ValorTotal/ValorDescuento SIN el IVA (divididos por 1+tarifa), mientras que
+  // ValorUnitario va con IVA incluido (compare_at_price crudo, sin dividir).
+  const tarifaIva = hgiCacheService.obtenerTarifaIvaProducto(item.sku) ?? config.hgi.ivaRateDefault;
+  const factorIva = 1 + tarifaIva;
+  const valorTotalSinIva = redondear2((item.valorTotal ?? 0) / factorIva);
+  const valorDescuentoSinIva = redondear2((item.valorDescuento ?? 0) / factorIva);
+
   const payload = [
     {
       Empresa: 1,
@@ -109,12 +122,13 @@ async function crearDetalleFAC(
       Documento: numeroDoc,
       Producto: item.sku,
       Cantidad: cantidad,
-      // Transacción 67 con IvaIncluido=1: HGI maneja el IVA internamente a partir de
-      // estos 4 valores, mandados directo desde Shopify sin deflactar nada.
+      // ValorUnitario va crudo (con IVA incluido, sin dividir); ValorTotal y ValorDescuento
+      // van divididos por (1+tarifaIva) para que HGI calcule Total = ValorTotal - ValorDescuento
+      // y luego reintroduzca el IVA al mostrarlo. PorcentajeDescuento no se divide.
       ValorUnitario: item.valorUnitario ?? 0,
-      ValorTotal: item.valorTotal ?? 0,
+      ValorTotal: valorTotalSinIva,
       PorcentajeDescuento: item.porcentajeDescuento ?? 0,
-      ValorDescuento: item.valorDescuento ?? 0,
+      ValorDescuento: valorDescuentoSinIva,
       Bodega: "1",
       Tercero: numeroIdentificacion,
       Vinculado: "0",
@@ -140,6 +154,18 @@ async function crearDetalleFAC(
       ActivoFijo: "0",
     },
   ];
+
+  const camposUnidad = hgiCacheService.obtenerCamposUnidadProducto(item.sku);
+  logger.stepInfo(
+    `HGI CrearDetalle payload SKU ${item.sku}: ${JSON.stringify(payload, null, 2)}`,
+  );
+  logger.stepInfo(
+    `HGI Cache: campos de unidad para SKU ${item.sku}: ${
+      camposUnidad == null
+        ? "producto no encontrado en caché"
+        : JSON.stringify(camposUnidad)
+    }`,
+  );
 
   const url = `${base}/Api/Documentos/CrearDetalle`;
   const { data } = await hgiRequest({

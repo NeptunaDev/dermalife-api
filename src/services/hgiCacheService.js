@@ -12,6 +12,8 @@ const PRODUCTS_JSON_PATH = path.resolve(__dirname, '../../products.json');
 const ciudadesMap = new Map();
 const productosMap = new Map();
 const precio1Map = new Map(); // sku -> Precio1 (HGI). Usado para validar sync con compare_at_price de Shopify.
+const tarifaIvaMap = new Map(); // sku -> tarifa de IVA como fracción (0.19, o 0 si es exento).
+const productosCompletosMap = new Map(); // sku -> objeto crudo completo devuelto por HGI (todos los campos, sin filtrar).
 let fuseCiudades = null;
 const cacheCodigoCiudad = new Map(); // cache de O(1) por nombre normalizado
 
@@ -119,6 +121,8 @@ async function cargarProductos() {
   const lista = Array.isArray(data) ? data : [];
   productosMap.clear();
   precio1Map.clear();
+  tarifaIvaMap.clear();
+  productosCompletosMap.clear();
   /** @type {Record<string, object>} */
   const productosPorCodigo = {};
   for (const item of lista) {
@@ -128,9 +132,16 @@ async function cargarProductos() {
       const key = String(codigo);
       productosMap.set(key, String(unidad));
       productosPorCodigo[key] = item;
+      productosCompletosMap.set(key, item);
       const precio1 = Number(item.Precio1 ?? item.precio1);
       if (Number.isFinite(precio1)) {
         precio1Map.set(key, precio1);
+      }
+      const ivaRaw = item.ValorIva ?? item.valorIva ?? item.PorcentajeIva ?? item.TarifaIva ?? item.Iva;
+      const ivaNum = Number(ivaRaw);
+      if (Number.isFinite(ivaNum)) {
+        // El campo viene como porcentaje (19, 5, 0), no como fracción; 0 = producto exento.
+        tarifaIvaMap.set(key, ivaNum > 1 ? ivaNum / 100 : ivaNum);
       }
     }
   }
@@ -222,9 +233,48 @@ function obtenerPrecio1Producto(sku) {
   return typeof precio1 === 'number' && Number.isFinite(precio1) ? precio1 : null;
 }
 
+/**
+ * Tarifa de IVA del producto en HGI, como fracción (0.19, 0.05, o 0 si es exento).
+ * Devuelve null si el SKU no está en caché o no tiene un valor de IVA reconocible
+ * (en ese caso el caller debe usar config.hgi.ivaRateDefault como fallback).
+ */
+function obtenerTarifaIvaProducto(sku) {
+  const codigo = sku != null ? String(sku).trim() : '';
+  const tarifa = tarifaIvaMap.get(codigo);
+  return typeof tarifa === 'number' && Number.isFinite(tarifa) ? tarifa : null;
+}
+
+/**
+ * Devuelve todos los campos del producto (crudo, tal cual lo entrega HGI en
+ * Api/Productos/ObtenerProductos) cuyo nombre contenga "unidad" (sin distinguir
+ * mayúsculas). Útil para diagnosticar si CodigoUnidad es la unidad de venta o de
+ * inventario, o si existe algún otro campo de unidad que no estamos usando.
+ * Devuelve null si el SKU no está en caché.
+ */
+function obtenerCamposUnidadProducto(sku) {
+  const codigo = sku != null ? String(sku).trim() : '';
+  const producto = productosCompletosMap.get(codigo);
+  if (!producto) return null;
+  /** @type {Record<string, unknown>} */
+  const campos = {};
+  for (const [k, v] of Object.entries(producto)) {
+    if (/unidad/i.test(k)) campos[k] = v;
+  }
+  return campos;
+}
+
+/** Devuelve el objeto crudo completo del producto en caché (todos los campos), o null. */
+function obtenerProductoCompleto(sku) {
+  const codigo = sku != null ? String(sku).trim() : '';
+  return productosCompletosMap.get(codigo) ?? null;
+}
+
 module.exports = {
   inicializarCache,
   obtenerCodigoCiudad,
   obtenerUnidadProducto,
   obtenerPrecio1Producto,
+  obtenerTarifaIvaProducto,
+  obtenerCamposUnidadProducto,
+  obtenerProductoCompleto,
 };
