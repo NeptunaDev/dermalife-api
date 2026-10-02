@@ -30,8 +30,12 @@ module.exports = {
       ? Number(process.env.HGI_IVA_RATE_DEFAULT)
       : 0.19,
     tercero: {
+      // CC = cédula de ciudadanía; sin esto HGI asume NI (NIT) y calcula un DV.
+      tipoIdentificacion: process.env.HGI_TIPO_IDENTIFICACION || 'CC',
+      // 1 = persona natural, 2 = jurídica.
+      codigoTipoPersona: Number(process.env.HGI_CODIGO_TIPO_PERSONA || 1),
       codigoTipoTercero: process.env.HGI_CODIGO_TIPO_TERCERO || '10',
-      codigoVendedor: process.env.HGI_CODIGO_VENDEDOR || '84',
+      codigoVendedor: process.env.HGI_CODIGO_VENDEDOR || '51',
       codigoSucursal: process.env.HGI_CODIGO_SUCURSAL || '1',
       codigoCausaRetiro: process.env.HGI_CODIGO_CAUSA_RETIRO || '0',
       codigoCiudadDefault: process.env.HGI_CODIGO_CIUDAD_DEFAULT || '04',

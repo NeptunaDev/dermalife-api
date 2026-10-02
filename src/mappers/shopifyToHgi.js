@@ -8,6 +8,10 @@ function redondear4(valor) {
   return Math.round((valor + Number.EPSILON) * 10000) / 10000;
 }
 
+function separarPalabras(texto) {
+  return String(texto ?? "").trim().split(/\s+/).filter(Boolean);
+}
+
 function formatoFecha(createdAt) {
   const d = new Date(createdAt);
   const y = d.getFullYear();
@@ -36,16 +40,35 @@ function mapearOrdenShopifyParaHGI(order, compareAtPriceMap = new Map()) {
     String(customer.id ?? "")
   ).trim();
 
+  // Nombres y apellidos por separado: HGI arma el "Nombre" del maestro a partir de
+  // Apellido1/Apellido2/Nombre1/Nombre2; si solo se envía Nombre, el encabezado queda vacío.
+  const primerosNombres =
+    customer.first_name || billing.first_name || shipping.first_name || "";
+  const apellidos =
+    customer.last_name || billing.last_name || shipping.last_name || "";
+  const [nombre1 = "", ...restoNombres] = separarPalabras(primerosNombres);
+  const [apellido1 = "", ...restoApellidos] = separarPalabras(apellidos);
+  const telefono =
+    shipping.phone || billing.phone || customer.phone || order.phone || "";
+  const email = order.contact_email || customer.email || order.email || "";
+
   const terceroData = {
     numeroIdentificacion,
+    // Mismo orden que usa HGI para personas naturales: apellidos y luego nombres.
     nombre:
-      [customer.first_name, customer.last_name]
+      [apellido1, ...restoApellidos, nombre1, ...restoNombres]
         .filter(Boolean)
-        .join(" ")
-        .trim() || "Cliente Shopify",
+        .join(" ") ||
+      "Cliente Shopify",
+    nombre1,
+    nombre2: restoNombres.join(" "),
+    apellido1,
+    apellido2: restoApellidos.join(" "),
     direccion: shipping.address1 ?? "",
-    telefono: shipping.phone ?? billing.phone ?? "",
-    email: order.contact_email ?? "",
+    direccionAlterna: shipping.address2 ?? "",
+    telefono,
+    celular: telefono,
+    email,
     ciudad: shipping.city ?? "",
   };
 
